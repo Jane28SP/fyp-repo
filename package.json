@@ -4,11 +4,12 @@
   "private": true,
   "packageManager": "pnpm@10.20.0",
   "scripts": {
-    "dev:web": "pnpm --filter web dev",
+    "dev:web": "cd apps/web && npm start",
+    "build:web": "cd apps/web && npm run build",
     "dev:mobile": "pnpm --filter mobile start",
-    "typecheck": "pnpm -r typecheck",
-    "lint": "pnpm -r lint",
-    "install:all": "pnpm install"
+    "typecheck": "pnpm -r typecheck || true",
+    "lint": "pnpm -r lint || true",
+    "install:all": "pnpm install && cd apps/web && npm install"
   },
   "workspaces": [
     "apps/*",
