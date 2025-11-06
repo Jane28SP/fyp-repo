@@ -5,38 +5,29 @@ import {
   FlatList,
   StyleSheet,
   TouchableOpacity,
-  TextInput,
   ActivityIndicator,
   Image,
   RefreshControl,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../supabaseClient';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../navigation/AppNavigator';
+import { Event } from '../../../web/src/lib/supabase';
 
-interface Event {
-  id: string;
-  title: string;
-  description: string;
-  date: string;
-  time: string;
-  location: string;
-  price: number;
-  capacity: number;
-  category?: string;
-  image_url?: string;
-}
+type EventListScreenProps = {
+  navigation: NativeStackNavigationProp<RootStackParamList, 'Main'>;
+};
 
-export default function EventListScreen({ navigation }: any) {
+export default function EventListScreen({ navigation }: EventListScreenProps) {
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
-    fetchEvents();
+    loadEvents();
   }, []);
 
-  const fetchEvents = async () => {
+  const loadEvents = async () => {
     try {
       const { data, error } = await supabase
         .from('events')
@@ -46,7 +37,7 @@ export default function EventListScreen({ navigation }: any) {
       if (error) throw error;
       setEvents(data || []);
     } catch (error) {
-      console.error('Error fetching events:', error);
+      console.error('Failed to load events:', error);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -55,55 +46,30 @@ export default function EventListScreen({ navigation }: any) {
 
   const onRefresh = () => {
     setRefreshing(true);
-    fetchEvents();
+    loadEvents();
   };
-
-  const filteredEvents = events.filter((event) =>
-    event.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    event.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    event.category?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
 
   const renderEvent = ({ item }: { item: Event }) => (
     <TouchableOpacity
       style={styles.eventCard}
       onPress={() => navigation.navigate('EventDetails', { eventId: item.id })}
     >
-      {item.image_url ? (
+      {item.image_url && (
         <Image source={{ uri: item.image_url }} style={styles.eventImage} />
-      ) : (
-        <View style={[styles.eventImage, styles.placeholderImage]}>
-          <Ionicons name="calendar" size={40} color="#ccc" />
-        </View>
       )}
-      
       <View style={styles.eventContent}>
-        <Text style={styles.eventTitle} numberOfLines={2}>{item.title}</Text>
-        <Text style={styles.eventDescription} numberOfLines={2}>{item.description}</Text>
-        
-        <View style={styles.eventDetails}>
-          <View style={styles.detailRow}>
-            <Ionicons name="calendar-outline" size={16} color="#666" />
-            <Text style={styles.detailText}>{item.date}</Text>
-          </View>
-          <View style={styles.detailRow}>
-            <Ionicons name="time-outline" size={16} color="#666" />
-            <Text style={styles.detailText}>{item.time}</Text>
-          </View>
-          <View style={styles.detailRow}>
-            <Ionicons name="location-outline" size={16} color="#666" />
-            <Text style={styles.detailText}>{item.location}</Text>
-          </View>
-        </View>
-
-        <View style={styles.footer}>
-          <Text style={styles.price}>RM {item.price.toFixed(2)}</Text>
-          <TouchableOpacity
-            style={styles.bookButton}
-            onPress={() => navigation.navigate('Booking', { eventId: item.id })}
-          >
-            <Text style={styles.bookButtonText}>Book Now</Text>
-          </TouchableOpacity>
+        <Text style={styles.eventTitle}>{item.title}</Text>
+        <Text style={styles.eventDate}>
+          📅 {new Date(item.date).toLocaleDateString()} at {item.time}
+        </Text>
+        <Text style={styles.eventLocation}>📍 {item.location}</Text>
+        <View style={styles.eventFooter}>
+          <Text style={styles.eventPrice}>
+            ${item.price === 0 ? 'Free' : item.price.toFixed(2)}
+          </Text>
+          <Text style={styles.eventCapacity}>
+            {item.capacity} spots
+          </Text>
         </View>
       </View>
     </TouchableOpacity>
@@ -113,6 +79,7 @@ export default function EventListScreen({ navigation }: any) {
     return (
       <View style={styles.centerContainer}>
         <ActivityIndicator size="large" color="#E4281F" />
+        <Text style={styles.loadingText}>Loading events...</Text>
       </View>
     );
   }
@@ -121,27 +88,20 @@ export default function EventListScreen({ navigation }: any) {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>JomEvent!</Text>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Search events..."
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-          placeholderTextColor="#999"
-        />
+        <Text style={styles.headerSubtitle}>Discover Amazing Events</Text>
       </View>
 
       <FlatList
-        data={filteredEvents}
+        data={events}
         renderItem={renderEvent}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.list}
+        contentContainerStyle={styles.listContent}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Ionicons name="calendar-outline" size={64} color="#ccc" />
-            <Text style={styles.emptyText}>No events found</Text>
+            <Text style={styles.emptyText}>No events available</Text>
           </View>
         }
       />
@@ -152,113 +112,95 @@ export default function EventListScreen({ navigation }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f7fafc',
+    backgroundColor: '#f7f7f7',
+  },
+  header: {
+    backgroundColor: '#E4281F',
+    padding: 20,
+    paddingTop: 60,
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: '#fff',
+    opacity: 0.9,
+    marginTop: 5,
   },
   centerContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  header: {
-    backgroundColor: '#4a5568',
-    padding: 16,
-    paddingTop: 60,
+  loadingText: {
+    marginTop: 10,
+    color: '#666',
   },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: 'white',
-    marginBottom: 12,
-  },
-  searchInput: {
-    backgroundColor: 'white',
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-  },
-  list: {
-    padding: 16,
+  listContent: {
+    padding: 15,
   },
   eventCard: {
-    backgroundColor: 'white',
+    backgroundColor: '#fff',
     borderRadius: 12,
-    marginBottom: 16,
+    marginBottom: 15,
     overflow: 'hidden',
+    elevation: 3,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    elevation: 3,
   },
   eventImage: {
     width: '100%',
-    height: 180,
-    backgroundColor: '#f0f0f0',
-  },
-  placeholderImage: {
-    justifyContent: 'center',
-    alignItems: 'center',
+    height: 150,
+    backgroundColor: '#e0e0e0',
   },
   eventContent: {
-    padding: 16,
+    padding: 15,
   },
   eventTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
-    color: '#2d3748',
+    color: '#333',
     marginBottom: 8,
   },
-  eventDescription: {
-    fontSize: 14,
-    color: '#718096',
-    marginBottom: 12,
-  },
-  eventDetails: {
-    marginBottom: 12,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  detailText: {
-    marginLeft: 6,
+  eventDate: {
     fontSize: 14,
     color: '#666',
+    marginBottom: 4,
   },
-  footer: {
+  eventLocation: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 10,
+  },
+  eventFooter: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginTop: 8,
-    paddingTop: 12,
+    marginTop: 10,
+    paddingTop: 10,
     borderTopWidth: 1,
-    borderTopColor: '#e2e8f0',
+    borderTopColor: '#f0f0f0',
   },
-  price: {
-    fontSize: 24,
+  eventPrice: {
+    fontSize: 20,
     fontWeight: 'bold',
     color: '#E4281F',
   },
-  bookButton: {
-    backgroundColor: '#E4281F',
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  bookButtonText: {
-    color: 'white',
-    fontWeight: '600',
-    fontSize: 16,
+  eventCapacity: {
+    fontSize: 14,
+    color: '#666',
   },
   emptyContainer: {
+    padding: 40,
     alignItems: 'center',
-    marginTop: 60,
   },
   emptyText: {
-    marginTop: 16,
-    fontSize: 18,
+    fontSize: 16,
     color: '#999',
   },
 });
-

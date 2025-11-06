@@ -1,281 +1,314 @@
-# FYP Event Booking System
+# JomEvent! - FYP Event Booking System
 
-A full-stack event booking platform supporting both **Web** and **Mobile** applications with a shared Supabase backend.
+A full-stack event booking system with **Web** and **Mobile** support.
 
-## 🚀 Features
-
-- **Event Management**: Browse, search, and filter events
-- **User Authentication**: Sign up, login, and session management
-- **Booking System**: Book events and manage reservations
-- **Shopping Cart**: Add multiple events to cart before checkout
-- **QR Code Tickets**: Digital tickets with QR codes for event entry
-- **Dashboard**: View your bookings and ticket history
-- **Real-time Updates**: Live event updates powered by Supabase
-
-## 📁 Project Structure
+## 🏗️ Project Structure
 
 ```
 fyp-repo/
 ├── apps/
 │   ├── web/          # React web application (Create React App)
 │   └── mobile/       # React Native mobile app (Expo)
-├── packages/
-│   ├── shared/       # Shared types and schemas (Zod)
-│   └── api-client/   # Supabase API client wrapper
-└── .github/
-    └── workflows/    # CI/CD configuration
+└── package.json      # Root scripts to run both apps
 ```
 
-## 🛠️ Tech Stack
+## 🚀 Technology Stack
 
-### Web App
-- **Framework**: React with TypeScript
-- **Build Tool**: Create React App
-- **Styling**: Tailwind CSS
-- **Routing**: React Router DOM
-- **Backend**: Supabase
+- **Web**: React + TypeScript + Create React App + Tailwind CSS
+- **Mobile**: React Native + Expo + TypeScript
+- **Backend**: Supabase (PostgreSQL + Auth + Real-time)
+- **Common**: Shared Supabase client and data types
 
-### Mobile App
-- **Framework**: React Native with Expo
-- **Language**: TypeScript
-- **Navigation**: React Navigation
-- **Backend**: Supabase
-- **QR Codes**: react-native-qrcode-svg
+## 📋 Prerequisites
 
-### Backend
-- **Database**: Supabase (PostgreSQL)
-- **Authentication**: Supabase Auth
-- **Real-time**: Supabase Realtime
-- **Storage**: Supabase Storage
+Before testing, make sure you have installed:
 
-## 📦 Installation
+1. **Node.js** (v18 or higher)
+   - Download from: https://nodejs.org/
 
-### Prerequisites
-- Node.js 18+ 
-- pnpm 10+ (for monorepo management)
-- npm (for web app CRA)
-- Git
+2. **Git**
+   - Download from: https://git-scm.com/
 
-### Setup Steps
+3. **For Mobile Testing**:
+   - **Expo Go App** on your phone (iOS/Android)
+     - iOS: https://apps.apple.com/app/expo-go/id982107779
+     - Android: https://play.google.com/store/apps/details?id=host.exp.exponent
 
-1. **Clone the repository**
+## 🔧 Setup Instructions
+
+### Step 1: Clone the Repository
+
 ```bash
 git clone https://github.com/YOUR_USERNAME/fyp-repo.git
 cd fyp-repo
 ```
 
-2. **Install dependencies**
+### Step 2: Install Dependencies
+
 ```bash
-# Install root dependencies and web app
-pnpm install:all
+# Install dependencies for both web and mobile apps
+npm run install:all
 ```
 
-3. **Configure environment variables**
+This command installs:
+- Root workspace dependencies (pnpm)
+- Web app dependencies (npm for CRA)
+- Mobile app dependencies (via pnpm workspaces)
 
-Create a `.env` file in the root directory:
+### Step 3: Set Up Environment Variables
+
+1. Copy the `.env.example` file to `.env`:
+
 ```bash
-# Supabase Configuration
-VITE_SUPABASE_URL=your-project.supabase.co
-VITE_SUPABASE_ANON_KEY=your-anon-key
+cp .env.example .env
+```
 
-EXPO_PUBLIC_SUPABASE_URL=your-project.supabase.co
+2. Open `.env` and fill in your Supabase credentials:
+
+```env
+# Web App
+REACT_APP_SUPABASE_URL=https://your-project.supabase.co
+REACT_APP_SUPABASE_ANON_KEY=your-anon-key
+
+# Mobile App
+EXPO_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
 EXPO_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 ```
 
-> **Get Supabase credentials:**
-> 1. Create a project at [supabase.com](https://supabase.com)
-> 2. Go to Settings > API
-> 3. Copy your Project URL and anon public key
+**Note**: The developer will provide the actual Supabase credentials separately for security.
 
-4. **Setup Supabase Database**
+## 🌐 Running the Web Application
 
-Run these SQL commands in your Supabase SQL Editor:
+Open a terminal and run:
 
-```sql
--- Create events table
-CREATE TABLE events (
-  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-  title TEXT NOT NULL,
-  description TEXT,
-  date TEXT NOT NULL,
-  time TEXT NOT NULL,
-  location TEXT NOT NULL,
-  price DECIMAL NOT NULL DEFAULT 0,
-  capacity INTEGER NOT NULL DEFAULT 100,
-  category TEXT,
-  image_url TEXT,
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
--- Create bookings table
-CREATE TABLE bookings (
-  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
-  user_id UUID REFERENCES auth.users NOT NULL,
-  event_id UUID REFERENCES events NOT NULL,
-  attendee_name TEXT NOT NULL,
-  attendee_email TEXT NOT NULL,
-  attendee_phone TEXT,
-  notes TEXT,
-  status TEXT DEFAULT 'confirmed',
-  rsvp_status TEXT DEFAULT 'going',
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
--- Enable Row Level Security
-ALTER TABLE events ENABLE ROW LEVEL SECURITY;
-ALTER TABLE bookings ENABLE ROW LEVEL SECURITY;
-
--- RLS Policies
-CREATE POLICY "Events are viewable by everyone" ON events FOR SELECT USING (true);
-CREATE POLICY "Users can view their own bookings" ON bookings FOR SELECT USING (auth.uid() = user_id);
-CREATE POLICY "Users can create their own bookings" ON bookings FOR INSERT WITH CHECK (auth.uid() = user_id);
+```bash
+npm run dev:web
 ```
 
-## 🚀 Running the Applications
+The web app will open automatically at `http://localhost:3000`
+
+### Web Features:
+- Browse events with filters and search
+- User authentication (login/signup)
+- Event booking system
+- Shopping cart
+- User dashboard with bookings
+- QR code for tickets
+- Organizer dashboard (admin features)
+- Analytics and reporting
+
+## 📱 Running the Mobile Application
+
+### Option 1: Using Your Phone (Recommended)
+
+1. Install **Expo Go** app on your phone
+
+2. Open a terminal and run:
+
+```bash
+npm run dev:mobile
+```
+
+3. A QR code will appear in the terminal
+
+4. Scan the QR code:
+   - **iOS**: Use Camera app
+   - **Android**: Use Expo Go app
+
+5. The app will load on your phone!
+
+### Option 2: Using Android Emulator
+
+```bash
+npm run dev:mobile
+# Press 'a' to open in Android emulator
+```
+
+### Option 3: Using iOS Simulator (Mac only)
+
+```bash
+npm run dev:mobile
+# Press 'i' to open in iOS simulator
+```
+
+### Mobile Features:
+- Browse events
+- User authentication (login/signup)
+- Event details
+- Booking system
+- User dashboard with bookings
+- QR code tickets
+- Bottom tab navigation
+
+## 🧪 Testing Both Versions
+
+To test both web and mobile simultaneously:
+
+1. **Terminal 1** (Web):
+```bash
+npm run dev:web
+```
+
+2. **Terminal 2** (Mobile):
+```bash
+npm run dev:mobile
+```
+
+Both apps share the same Supabase backend, so:
+- Create an account on web → Login with same account on mobile
+- Book an event on mobile → See it in web dashboard
+- All data syncs in real-time!
+
+## 👤 Test User Accounts
+
+For testing purposes, you can:
+
+1. **Create a new account**: Use the Sign Up feature
+2. **Use demo account** (if provided by developer)
+
+## 🗄️ Database Schema
+
+The Supabase database includes these tables:
+- `users` - User profiles
+- `events` - Event listings
+- `bookings` - Event bookings
+- `promo_codes` - Discount codes
+- `attendance` - Check-in records
+- `activity_logs` - Activity tracking
+
+## 📸 Screenshots
+
+### Web Application
+- Homepage with event listings
+- Event details and booking
+- User dashboard
+- Organizer dashboard with analytics
+
+### Mobile Application
+- Event list with pull-to-refresh
+- Event details
+- Booking screen
+- Dashboard with QR codes
+
+## 🐛 Troubleshooting
+
+### Web App Issues
+
+**Issue**: "Module not found" errors
+```bash
+cd apps/web
+npm install
+```
+
+**Issue**: Build fails
+```bash
+cd apps/web
+rm -rf node_modules package-lock.json
+npm install
+```
+
+### Mobile App Issues
+
+**Issue**: "Metro bundler" errors
+```bash
+pnpm --filter mobile start --clear
+```
+
+**Issue**: Can't connect to Expo
+- Make sure your phone and computer are on the same WiFi
+- Try using tunnel mode: `pnpm --filter mobile start --tunnel`
+
+**Issue**: Environment variables not loading
+- Make sure `.env` file is in the root directory
+- Restart the dev server after changing `.env`
+
+## 📦 Building for Production
 
 ### Web App
 ```bash
-# Development mode
-pnpm dev:web
-
-# The web app will be available at http://localhost:3000
+npm run build:web
+# Output will be in apps/web/build/
 ```
 
 ### Mobile App
 ```bash
-# Start Expo development server
-pnpm dev:mobile
-
-# Then:
-# - Press 'i' for iOS simulator
-# - Press 'a' for Android emulator  
-# - Scan QR code with Expo Go app on your phone
+cd apps/mobile
+npx expo build:android  # For Android
+npx expo build:ios      # For iOS (Mac only)
 ```
 
-## 📱 Testing on Your Phone
+## 🔐 Security Notes
 
-1. Install **Expo Go** from App Store (iOS) or Google Play (Android)
-2. Run `pnpm dev:mobile`
-3. Scan the QR code shown in the terminal
-4. The app will open in Expo Go
-
-## 🧪 For Teachers/Reviewers
-
-### Quick Start Guide
-
-1. **Clone and setup** (5 minutes):
-```bash
-git clone https://github.com/YOUR_USERNAME/fyp-repo.git
-cd fyp-repo
-pnpm install:all
-```
-
-2. **Add environment variables** - Create `.env` in root with Supabase credentials
-
-3. **Test Web App**:
-```bash
-pnpm dev:web
-# Open http://localhost:3000
-```
-
-4. **Test Mobile App**:
-```bash
-pnpm dev:mobile
-# Scan QR code with Expo Go app
-```
-
-### What to Test
-
-- ✅ User registration and login (both web & mobile)
-- ✅ Browse events with search/filter
-- ✅ View event details
-- ✅ Book an event
-- ✅ View bookings in dashboard
-- ✅ QR code ticket generation (mobile)
-- ✅ Logout functionality
-
-## 🔧 Available Scripts
-
-```bash
-# Web
-pnpm dev:web          # Run web dev server
-pnpm build:web        # Build web for production
-
-# Mobile
-pnpm dev:mobile       # Start Expo dev server
-
-# Development
-pnpm typecheck        # Run TypeScript checks
-pnpm lint             # Run linting
-
-# Installation
-pnpm install:all      # Install all dependencies
-```
+- `.env` file is NOT committed to Git (contains secrets)
+- Supabase Row Level Security (RLS) is enabled
+- User authentication required for bookings
+- Admin features require special permissions
 
 ## 📝 Project Features
 
-### Web Application
-- Modern responsive UI with Tailwind CSS
-- Full event management system
-- User authentication and authorization
-- Shopping cart functionality
-- Booking management dashboard
-- QR code ticket display
+### Core Features
+✅ User authentication (signup/login)
+✅ Event browsing and filtering
+✅ Event booking system
+✅ Shopping cart
+✅ Payment integration (ready)
+✅ QR code tickets
+✅ User dashboard
+✅ Organizer dashboard
+✅ Real-time updates
+✅ Responsive design (web)
+✅ Native mobile experience
 
-### Mobile Application
-- Native iOS and Android support
-- Bottom tab navigation
-- Event browsing and booking
-- Digital wallet for tickets
-- QR code scanner integration
-- Push notification ready
+### Web-Only Features
+- Advanced analytics dashboard
+- Event creation and management
+- Promo code management
+- Attendance tracking
+- Activity logs
 
-### Shared Backend
-- Centralized Supabase instance
-- Real-time database updates
-- Secure authentication
-- File storage for event images
-- Row Level Security (RLS) policies
+### Mobile-Only Features
+- Native navigation (bottom tabs)
+- Pull-to-refresh
+- Optimized for touch
+- Camera QR scanning (future)
 
-## 🏗️ Architecture
+## 🎯 Future Enhancements
 
-The project uses a **monorepo structure** with pnpm workspaces:
+- Push notifications for bookings
+- In-app messaging
+- Social sharing
+- Calendar integration
+- Offline mode
+- Payment gateway integration
 
-- **apps/web**: Independent CRA project for web
-- **apps/mobile**: Expo React Native app
-- **packages/shared**: Common TypeScript types and Zod schemas
-- **packages/api-client**: Supabase client wrapper with auth & CRUD operations
+## 👨‍🏫 For Teachers/Reviewers
 
-This architecture allows:
-- ✅ Code sharing between web and mobile
-- ✅ Consistent type safety across platforms
-- ✅ Single source of truth for API logic
-- ✅ Independent deployment of web and mobile
+This project demonstrates:
+- ✅ Full-stack development (Frontend + Backend)
+- ✅ Cross-platform support (Web + Mobile)
+- ✅ Modern React practices
+- ✅ TypeScript type safety
+- ✅ Real-time data synchronization
+- ✅ Authentication and authorization
+- ✅ Database design and management
+- ✅ Responsive and mobile-first design
+- ✅ Code organization and structure
+- ✅ Environment configuration
+- ✅ Version control (Git)
 
-## 🤝 Contributing
+## 📧 Support
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+For issues or questions, contact:
+- Developer: [Your Name]
+- Email: [Your Email]
+- GitHub: [Your GitHub Profile]
 
 ## 📄 License
 
-This project is created for FYP (Final Year Project) purposes.
-
-## 👨‍💻 Author
-
-**Your Name**
-- GitHub: [@yourusername](https://github.com/yourusername)
-- Email: your.email@example.com
-
-## 🙏 Acknowledgments
-
-- [Supabase](https://supabase.com) for the backend infrastructure
-- [Expo](https://expo.dev) for the mobile development platform
-- [React](https://react.dev) for the UI framework
+This is a Final Year Project (FYP) for academic purposes.
 
 ---
 
-**Note**: This is a student project for educational purposes. Please ensure proper security measures before deploying to production.
+**Last Updated**: November 2024
+**Version**: 1.0.0
+**Status**: Ready for Testing ✅

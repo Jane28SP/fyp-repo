@@ -7,71 +7,45 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
-  RefreshControl,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import QRCode from 'react-native-qrcode-svg';
 import { supabase } from '../supabaseClient';
+import QRCode from 'react-native-qrcode-svg';
+import { Booking, Event } from '../../../web/src/lib/supabase';
 
-interface Booking {
-  id: string;
-  event_id: string;
-  status: string;
-  created_at: string;
-  event: {
-    title: string;
-    date: string;
-    time: string;
-    location: string;
-  };
-}
+type BookingWithEvent = Booking & { event?: Event };
 
-export default function DashboardScreen({ navigation }: any) {
-  const [bookings, setBookings] = useState<Booking[]>([]);
+export default function DashboardScreen() {
+  const [bookings, setBookings] = useState<BookingWithEvent[]>([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [user, setUser] = useState<any>(null);
-  const [selectedBooking, setSelectedBooking] = useState<string | null>(null);
 
   useEffect(() => {
-    fetchUserAndBookings();
+    loadUserAndBookings();
   }, []);
 
-  const fetchUserAndBookings = async () => {
+  const loadUserAndBookings = async () => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        navigation.replace('Login');
-        return;
-      }
+      if (!user) return;
+
       setUser(user);
 
       const { data, error } = await supabase
         .from('bookings')
-        .select(`
-          *,
-          event:events(title, date, time, location)
-        `)
+        .select('*, event:events(*)')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
       setBookings(data || []);
     } catch (error) {
-      console.error('Error:', error);
-      Alert.alert('Error', 'Failed to load bookings');
+      console.error('Failed to load bookings:', error);
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   };
 
-  const onRefresh = () => {
-    setRefreshing(true);
-    fetchUserAndBookings();
-  };
-
-  const handleLogout = () => {
+  const handleLogout = async () => {
     Alert.alert(
       'Logout',
       'Are you sure you want to logout?',
@@ -82,70 +56,32 @@ export default function DashboardScreen({ navigation }: any) {
           style: 'destructive',
           onPress: async () => {
             await supabase.auth.signOut();
-            navigation.replace('Login');
+            // Navigation will be handled by auth state change
           },
         },
       ]
     );
   };
 
-  const renderBooking = ({ item }: { item: Booking }) => {
-    const isExpanded = selectedBooking === item.id;
-    
-    return (
-      <View style={styles.bookingCard}>
-        <TouchableOpacity
-          style={styles.bookingHeader}
-          onPress={() => setSelectedBooking(isExpanded ? null : item.id)}
-        >
-          <View style={styles.bookingInfo}>
-            <Text style={styles.bookingTitle}>{item.event.title}</Text>
-            <View style={styles.bookingDetails}>
-              <Ionicons name="calendar-outline" size={14} color="#666" />
-              <Text style={styles.bookingDate}>{item.event.date}</Text>
-            </View>
-            <View style={styles.bookingDetails}>
-              <Ionicons name="location-outline" size={14} color="#666" />
-              <Text style={styles.bookingDate}>{item.event.location}</Text>
-            </View>
-            <View style={[
-              styles.statusBadge,
-              item.status === 'confirmed' && styles.statusConfirmed,
-              item.status === 'cancelled' && styles.statusCancelled,
-            ]}>
-              <Text style={styles.statusText}>
-                {item.status.toUpperCase()}
-              </Text>
-            </View>
+  const renderBooking = ({ item }: { item: BookingWithEvent }) => (
+    <View style={styles.bookingCard}>
+      <Text style={styles.eventTitle}>{item.event?.title || 'Event'}</Text>
+      <Text style={styles.bookingStatus}>Status: {item.status}</Text>
+      
+      {item.status === 'confirmed' && (
+        <View style={styles.qrContainer}>
+          <Text style={styles.qrLabel}>Your Ticket QR Code:</Text>
+          <View style={styles.qrCode}>
+            <QRCode
+              value={item.id}
+              size={150}
+            />
           </View>
-          <Ionicons 
-            name={isExpanded ? 'chevron-up' : 'chevron-down'} 
-            size={24} 
-            color="#666" 
-          />
-        </TouchableOpacity>
-
-        {isExpanded && (
-          <View style={styles.qrContainer}>
-            <Text style={styles.qrLabel}>Your Ticket QR Code</Text>
-            <View style={styles.qrCodeWrapper}>
-              <QRCode
-                value={JSON.stringify({
-                  bookingId: item.id,
-                  eventId: item.event_id,
-                  userId: user?.id,
-                })}
-                size={200}
-              />
-            </View>
-            <Text style={styles.qrHint}>
-              Show this at the event entrance
-            </Text>
-          </View>
-        )}
-      </View>
-    );
-  };
+          <Text style={styles.qrHint}>Show this code at the event</Text>
+        </View>
+      )}
+    </View>
+  );
 
   if (loading) {
     return (
@@ -158,37 +94,33 @@ export default function DashboardScreen({ navigation }: any) {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <View>
-          <Text style={styles.headerTitle}>My Bookings</Text>
-          <Text style={styles.headerSubtitle}>{user?.email}</Text>
-        </View>
-        <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-          <Ionicons name="log-out-outline" size={24} color="white" />
-        </TouchableOpacity>
+        <Text style={styles.headerTitle}>My Account</Text>
+        <Text style={styles.headerSubtitle}>{user?.email}</Text>
       </View>
 
-      {bookings.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <Ionicons name="ticket-outline" size={80} color="#ccc" />
-          <Text style={styles.emptyText}>No bookings yet</Text>
-          <TouchableOpacity
-            style={styles.browseButton}
-            onPress={() => navigation.navigate('Events')}
-          >
-            <Text style={styles.browseButtonText}>Browse Events</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <FlatList
-          data={bookings}
-          renderItem={renderBooking}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.list}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
-          }
-        />
-      )}
+      <FlatList
+        data={bookings}
+        renderItem={renderBooking}
+        keyExtractor={(item) => item.id}
+        contentContainerStyle={styles.listContent}
+        ListHeaderComponent={
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>My Bookings</Text>
+          </View>
+        }
+        ListEmptyComponent={
+          <View style={styles.emptyContainer}>
+            <Text style={styles.emptyText}>No bookings yet</Text>
+            <Text style={styles.emptySubtext}>
+              Book your first event from the Events tab!
+            </Text>
+          </View>
+        }
+      />
+
+      <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+        <Text style={styles.logoutButtonText}>Logout</Text>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -196,140 +128,114 @@ export default function DashboardScreen({ navigation }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f7fafc',
+    backgroundColor: '#f7f7f7',
+  },
+  header: {
+    backgroundColor: '#E4281F',
+    padding: 20,
+    paddingTop: 60,
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#fff',
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: '#fff',
+    opacity: 0.9,
+    marginTop: 5,
   },
   centerContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  header: {
-    backgroundColor: '#4a5568',
-    padding: 20,
-    paddingTop: 60,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  listContent: {
+    padding: 15,
   },
-  headerTitle: {
-    fontSize: 28,
+  sectionHeader: {
+    marginBottom: 15,
+  },
+  sectionTitle: {
+    fontSize: 20,
     fontWeight: 'bold',
-    color: 'white',
-    marginBottom: 4,
-  },
-  headerSubtitle: {
-    fontSize: 14,
-    color: 'rgba(255,255,255,0.8)',
-  },
-  logoutButton: {
-    padding: 8,
-  },
-  list: {
-    padding: 16,
+    color: '#333',
   },
   bookingCard: {
-    backgroundColor: 'white',
+    backgroundColor: '#fff',
     borderRadius: 12,
-    marginBottom: 12,
+    padding: 20,
+    marginBottom: 15,
+    elevation: 3,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
     shadowRadius: 4,
-    elevation: 3,
   },
-  bookingHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
-  },
-  bookingInfo: {
-    flex: 1,
-  },
-  bookingTitle: {
+  eventTitle: {
     fontSize: 18,
-    fontWeight: '600',
-    color: '#2d3748',
+    fontWeight: 'bold',
+    color: '#333',
     marginBottom: 8,
   },
-  bookingDetails: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
-  bookingDate: {
-    marginLeft: 6,
+  bookingStatus: {
     fontSize: 14,
     color: '#666',
-  },
-  statusBadge: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginTop: 8,
-  },
-  statusConfirmed: {
-    backgroundColor: '#48bb78',
-  },
-  statusCancelled: {
-    backgroundColor: '#f56565',
-  },
-  statusText: {
-    color: 'white',
-    fontSize: 11,
-    fontWeight: '600',
+    marginBottom: 15,
+    textTransform: 'capitalize',
   },
   qrContainer: {
     alignItems: 'center',
-    padding: 24,
+    marginTop: 15,
+    paddingTop: 15,
     borderTopWidth: 1,
-    borderTopColor: '#e2e8f0',
+    borderTopColor: '#f0f0f0',
   },
   qrLabel: {
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: '600',
-    color: '#2d3748',
-    marginBottom: 16,
+    color: '#666',
+    marginBottom: 15,
   },
-  qrCodeWrapper: {
-    padding: 16,
-    backgroundColor: 'white',
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+  qrCode: {
+    padding: 15,
+    backgroundColor: '#fff',
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#E4281F',
   },
   qrHint: {
-    marginTop: 12,
-    fontSize: 13,
-    color: '#718096',
-    textAlign: 'center',
+    fontSize: 12,
+    color: '#999',
+    marginTop: 10,
   },
   emptyContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
     padding: 40,
+    alignItems: 'center',
   },
   emptyText: {
     fontSize: 18,
+    color: '#666',
+    marginBottom: 10,
+  },
+  emptySubtext: {
+    fontSize: 14,
     color: '#999',
-    marginTop: 16,
-    marginBottom: 24,
+    textAlign: 'center',
   },
-  browseButton: {
-    backgroundColor: '#E4281F',
-    paddingHorizontal: 32,
-    paddingVertical: 14,
-    borderRadius: 8,
+  logoutButton: {
+    backgroundColor: '#fff',
+    margin: 15,
+    padding: 15,
+    borderRadius: 10,
+    borderWidth: 2,
+    borderColor: '#E4281F',
+    alignItems: 'center',
   },
-  browseButtonText: {
-    color: 'white',
+  logoutButtonText: {
+    color: '#E4281F',
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: 'bold',
   },
 });
-

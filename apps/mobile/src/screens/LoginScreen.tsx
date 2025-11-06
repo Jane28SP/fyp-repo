@@ -5,43 +5,42 @@ import {
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
-  ScrollView,
-  Image,
+  Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { supabase } from '../supabaseClient';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RootStackParamList } from '../navigation/AppNavigator';
 
-export default function LoginScreen({ navigation }: any) {
+type LoginScreenProps = {
+  navigation: NativeStackNavigationProp<RootStackParamList, 'Login'>;
+};
+
+export default function LoginScreen({ navigation }: LoginScreenProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isLogin, setIsLogin] = useState(true);
   const [loading, setLoading] = useState(false);
+  const [isSignUp, setIsSignUp] = useState(false);
 
   const handleAuth = async () => {
     if (!email || !password) {
-      Alert.alert('Error', 'Please fill in all fields');
+      Alert.alert('Error', 'Please enter email and password');
       return;
     }
 
     setLoading(true);
     try {
-      if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
+      if (isSignUp) {
+        const { error } = await supabase.auth.signUp({ email, password });
+        if (error) throw error;
+        Alert.alert('Success', 'Check your email to confirm your account!');
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
         navigation.replace('Main');
-      } else {
-        const { error } = await supabase.auth.signUp({
-          email,
-          password,
-        });
-        if (error) throw error;
-        Alert.alert('Success', 'Account created! Please check your email to verify.');
-        setIsLogin(true);
       }
     } catch (error: any) {
       Alert.alert('Error', error.message);
@@ -55,15 +54,13 @@ export default function LoginScreen({ navigation }: any) {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       style={styles.container}
     >
-      <ScrollView contentContainerStyle={styles.scrollContainer}>
+      <View style={styles.content}>
         <View style={styles.header}>
           <Text style={styles.logo}>JomEvent!</Text>
-          <Text style={styles.subtitle}>Mobile App</Text>
+          <Text style={styles.subtitle}>Book Amazing Events</Text>
         </View>
 
         <View style={styles.form}>
-          <Text style={styles.title}>{isLogin ? 'Sign In' : 'Sign Up'}</Text>
-
           <TextInput
             style={styles.input}
             placeholder="Email"
@@ -71,7 +68,7 @@ export default function LoginScreen({ navigation }: any) {
             onChangeText={setEmail}
             autoCapitalize="none"
             keyboardType="email-address"
-            placeholderTextColor="#999"
+            editable={!loading}
           />
 
           <TextInput
@@ -80,7 +77,7 @@ export default function LoginScreen({ navigation }: any) {
             value={password}
             onChangeText={setPassword}
             secureTextEntry
-            placeholderTextColor="#999"
+            editable={!loading}
           />
 
           <TouchableOpacity
@@ -88,21 +85,27 @@ export default function LoginScreen({ navigation }: any) {
             onPress={handleAuth}
             disabled={loading}
           >
-            <Text style={styles.buttonText}>
-              {loading ? 'Please wait...' : isLogin ? 'Sign In' : 'Sign Up'}
-            </Text>
+            {loading ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.buttonText}>
+                {isSignUp ? 'Sign Up' : 'Sign In'}
+              </Text>
+            )}
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={styles.switchButton}
-            onPress={() => setIsLogin(!isLogin)}
+            onPress={() => setIsSignUp(!isSignUp)}
+            disabled={loading}
           >
             <Text style={styles.switchText}>
-              {isLogin ? "Don't have an account? Sign Up" : 'Already have an account? Sign In'}
+              {isSignUp
+                ? 'Already have an account? Sign In'
+                : "Don't have an account? Sign Up"}
             </Text>
           </TouchableOpacity>
         </View>
-      </ScrollView>
+      </View>
     </KeyboardAvoidingView>
   );
 }
@@ -110,75 +113,56 @@ export default function LoginScreen({ navigation }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f7fafc',
+    backgroundColor: '#fff',
   },
-  scrollContainer: {
-    flexGrow: 1,
+  content: {
+    flex: 1,
     justifyContent: 'center',
     padding: 20,
   },
   header: {
     alignItems: 'center',
-    marginBottom: 40,
+    marginBottom: 50,
   },
   logo: {
     fontSize: 48,
     fontWeight: 'bold',
     color: '#E4281F',
+    marginBottom: 10,
   },
   subtitle: {
     fontSize: 16,
     color: '#666',
-    marginTop: 8,
   },
   form: {
-    backgroundColor: 'white',
-    borderRadius: 16,
-    padding: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: '#2d3748',
-    marginBottom: 24,
-    textAlign: 'center',
+    width: '100%',
   },
   input: {
-    borderWidth: 1,
-    borderColor: '#e2e8f0',
-    borderRadius: 8,
-    padding: 16,
+    backgroundColor: '#f5f5f5',
+    padding: 15,
+    borderRadius: 10,
+    marginBottom: 15,
     fontSize: 16,
-    marginBottom: 16,
-    backgroundColor: '#fff',
   },
   button: {
     backgroundColor: '#E4281F',
-    borderRadius: 8,
-    padding: 16,
+    padding: 15,
+    borderRadius: 10,
     alignItems: 'center',
-    marginTop: 8,
+    marginTop: 10,
   },
   buttonDisabled: {
-    backgroundColor: '#ccc',
+    opacity: 0.6,
   },
   buttonText: {
-    color: 'white',
+    color: '#fff',
     fontSize: 16,
-    fontWeight: '600',
-  },
-  switchButton: {
-    marginTop: 16,
-    alignItems: 'center',
+    fontWeight: 'bold',
   },
   switchText: {
-    color: '#4299e1',
+    textAlign: 'center',
+    color: '#E4281F',
+    marginTop: 20,
     fontSize: 14,
   },
 });
-

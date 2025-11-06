@@ -2,26 +2,34 @@ import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
-  ScrollView,
   StyleSheet,
-  TouchableOpacity,
+  ScrollView,
   Image,
+  TouchableOpacity,
   ActivityIndicator,
   Alert,
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { supabase } from '../supabaseClient';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import { RouteProp } from '@react-navigation/native';
+import { RootStackParamList } from '../navigation/AppNavigator';
+import { Event } from '../../../web/src/lib/supabase';
 
-export default function EventDetailsScreen({ route, navigation }: any) {
+type EventDetailsScreenProps = {
+  navigation: NativeStackNavigationProp<RootStackParamList, 'EventDetails'>;
+  route: RouteProp<RootStackParamList, 'EventDetails'>;
+};
+
+export default function EventDetailsScreen({ navigation, route }: EventDetailsScreenProps) {
   const { eventId } = route.params;
-  const [event, setEvent] = useState<any>(null);
+  const [event, setEvent] = useState<Event | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchEventDetails();
-  }, []);
+    loadEvent();
+  }, [eventId]);
 
-  const fetchEventDetails = async () => {
+  const loadEvent = async () => {
     try {
       const { data, error } = await supabase
         .from('events')
@@ -32,8 +40,8 @@ export default function EventDetailsScreen({ route, navigation }: any) {
       if (error) throw error;
       setEvent(data);
     } catch (error) {
+      console.error('Failed to load event:', error);
       Alert.alert('Error', 'Failed to load event details');
-      navigation.goBack();
     } finally {
       setLoading(false);
     }
@@ -51,63 +59,55 @@ export default function EventDetailsScreen({ route, navigation }: any) {
     );
   }
 
-  if (!event) return null;
+  if (!event) {
+    return (
+      <View style={styles.centerContainer}>
+        <Text style={styles.errorText}>Event not found</Text>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container}>
       <ScrollView>
-        {event.image_url ? (
-          <Image source={{ uri: event.image_url }} style={styles.banner} />
-        ) : (
-          <View style={[styles.banner, styles.placeholderBanner]}>
-            <Ionicons name="calendar" size={80} color="#ccc" />
-          </View>
+        {event.image_url && (
+          <Image source={{ uri: event.image_url }} style={styles.image} />
         )}
 
         <View style={styles.content}>
           <Text style={styles.title}>{event.title}</Text>
-          
+
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>📅 Date & Time</Text>
+            <Text style={styles.infoValue}>
+              {new Date(event.date).toLocaleDateString()} at {event.time}
+            </Text>
+          </View>
+
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>📍 Location</Text>
+            <Text style={styles.infoValue}>{event.location}</Text>
+          </View>
+
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>💰 Price</Text>
+            <Text style={styles.priceValue}>
+              {event.price === 0 ? 'Free' : `$${event.price.toFixed(2)}`}
+            </Text>
+          </View>
+
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>👥 Capacity</Text>
+            <Text style={styles.infoValue}>{event.capacity} spots</Text>
+          </View>
+
           {event.category && (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{event.category}</Text>
+            <View style={styles.categoryBadge}>
+              <Text style={styles.categoryText}>{event.category}</Text>
             </View>
           )}
 
-          <View style={styles.infoSection}>
-            <View style={styles.infoRow}>
-              <Ionicons name="calendar" size={24} color="#E4281F" />
-              <View style={styles.infoTextContainer}>
-                <Text style={styles.infoLabel}>Date</Text>
-                <Text style={styles.infoValue}>{event.date}</Text>
-              </View>
-            </View>
-
-            <View style={styles.infoRow}>
-              <Ionicons name="time" size={24} color="#E4281F" />
-              <View style={styles.infoTextContainer}>
-                <Text style={styles.infoLabel}>Time</Text>
-                <Text style={styles.infoValue}>{event.time}</Text>
-              </View>
-            </View>
-
-            <View style={styles.infoRow}>
-              <Ionicons name="location" size={24} color="#E4281F" />
-              <View style={styles.infoTextContainer}>
-                <Text style={styles.infoLabel}>Location</Text>
-                <Text style={styles.infoValue}>{event.location}</Text>
-              </View>
-            </View>
-
-            <View style={styles.infoRow}>
-              <Ionicons name="people" size={24} color="#E4281F" />
-              <View style={styles.infoTextContainer}>
-                <Text style={styles.infoLabel}>Capacity</Text>
-                <Text style={styles.infoValue}>{event.capacity} people</Text>
-              </View>
-            </View>
-          </View>
-
-          <View style={styles.descriptionSection}>
+          <View style={styles.descriptionContainer}>
             <Text style={styles.sectionTitle}>About This Event</Text>
             <Text style={styles.description}>{event.description}</Text>
           </View>
@@ -115,9 +115,11 @@ export default function EventDetailsScreen({ route, navigation }: any) {
       </ScrollView>
 
       <View style={styles.footer}>
-        <View>
-          <Text style={styles.priceLabel}>Price</Text>
-          <Text style={styles.price}>RM {event.price.toFixed(2)}</Text>
+        <View style={styles.priceContainer}>
+          <Text style={styles.footerPriceLabel}>Total</Text>
+          <Text style={styles.footerPrice}>
+            {event.price === 0 ? 'Free' : `$${event.price.toFixed(2)}`}
+          </Text>
         </View>
         <TouchableOpacity style={styles.bookButton} onPress={handleBook}>
           <Text style={styles.bookButtonText}>Book Now</Text>
@@ -130,121 +132,107 @@ export default function EventDetailsScreen({ route, navigation }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: 'white',
+    backgroundColor: '#fff',
   },
   centerContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-  banner: {
+  image: {
     width: '100%',
     height: 250,
-  },
-  placeholderBanner: {
-    backgroundColor: '#f0f0f0',
-    justifyContent: 'center',
-    alignItems: 'center',
+    backgroundColor: '#e0e0e0',
   },
   content: {
     padding: 20,
   },
   title: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: 'bold',
-    color: '#2d3748',
-    marginBottom: 12,
-  },
-  badge: {
-    alignSelf: 'flex-start',
-    backgroundColor: '#E4281F',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
+    color: '#333',
     marginBottom: 20,
   },
-  badgeText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  infoSection: {
-    marginBottom: 24,
-  },
   infoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-    backgroundColor: '#f7fafc',
-    padding: 16,
-    borderRadius: 12,
-  },
-  infoTextContainer: {
-    marginLeft: 16,
-    flex: 1,
+    marginBottom: 15,
   },
   infoLabel: {
-    fontSize: 12,
-    color: '#718096',
-    marginBottom: 4,
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 5,
   },
   infoValue: {
     fontSize: 16,
-    fontWeight: '600',
-    color: '#2d3748',
+    color: '#333',
   },
-  descriptionSection: {
-    marginBottom: 100,
-  },
-  sectionTitle: {
+  priceValue: {
     fontSize: 20,
     fontWeight: 'bold',
-    color: '#2d3748',
-    marginBottom: 12,
+    color: '#E4281F',
+  },
+  categoryBadge: {
+    backgroundColor: '#FFF3E0',
+    paddingHorizontal: 15,
+    paddingVertical: 8,
+    borderRadius: 20,
+    alignSelf: 'flex-start',
+    marginTop: 10,
+  },
+  categoryText: {
+    color: '#FF6F00',
+    fontWeight: '600',
+  },
+  descriptionContainer: {
+    marginTop: 20,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#f0f0f0',
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 10,
   },
   description: {
-    fontSize: 16,
-    color: '#4a5568',
+    fontSize: 15,
+    color: '#666',
     lineHeight: 24,
   },
+  errorText: {
+    fontSize: 16,
+    color: '#999',
+  },
   footer: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
     padding: 20,
-    backgroundColor: 'white',
     borderTopWidth: 1,
-    borderTopColor: '#e2e8f0',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 5,
+    borderTopColor: '#f0f0f0',
+    backgroundColor: '#fff',
   },
-  priceLabel: {
-    fontSize: 14,
-    color: '#718096',
-    marginBottom: 4,
+  priceContainer: {
+    flex: 1,
+    justifyContent: 'center',
   },
-  price: {
-    fontSize: 28,
+  footerPriceLabel: {
+    fontSize: 12,
+    color: '#666',
+  },
+  footerPrice: {
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#E4281F',
   },
   bookButton: {
     backgroundColor: '#E4281F',
-    paddingHorizontal: 32,
-    paddingVertical: 16,
-    borderRadius: 12,
+    paddingHorizontal: 40,
+    paddingVertical: 15,
+    borderRadius: 10,
+    justifyContent: 'center',
   },
   bookButtonText: {
-    color: 'white',
-    fontSize: 18,
-    fontWeight: '600',
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
   },
 });
-
