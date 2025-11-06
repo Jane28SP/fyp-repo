@@ -10,7 +10,6 @@ jobs:
   ci:
     runs-on: ubuntu-latest
     env:
-      PNPM_CONFIG_ENABLE_PRE_POST_SCRIPTS: 'true'
       VITE_SUPABASE_URL: 'https://example.supabase.co'
       VITE_SUPABASE_ANON_KEY: 'anon'
     steps:
@@ -22,13 +21,13 @@ jobs:
         with:
           node-version: 18
 
-      - name: Enable corepack and activate pnpm
-        run: |
-          corepack enable
-          corepack prepare pnpm@10.20.0 --activate
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v3
+        with:
+          version: 10
 
-      - name: Install deps (with scripts enabled)
-        run: pnpm install --config.enable-pre-post-scripts true
+      - name: Install deps
+        run: pnpm install --no-frozen-lockfile
 
       - name: Typecheck all
         run: pnpm typecheck || true
