@@ -1,0 +1,17 @@
+﻿{
+  "name": "fyp-repo",
+  "version": "1.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.20.0",
+  "scripts": {
+    "dev:web": "pnpm --filter web dev",
+    "dev:mobile": "pnpm --filter mobile start",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "install:all": "pnpm install"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ]
+}
