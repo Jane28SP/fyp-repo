@@ -1,22 +1,38 @@
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
-import { supabase } from './src/supabaseClient';
+import { StyleSheet, Text, View, SafeAreaView } from 'react-native';
+import { EventsList } from './src/components/EventsList';
 
 export default function App() {
-  supabase.auth.getSession().then((s)=>console.log('Mobile session', s.data?.session?.user?.id ?? null)).catch(console.error)
   return (
-    <View style={styles.container}>
-      <Text>Open up App.tsx to start working on your app!</Text>
-      <StatusBar style="auto" />
-    </View>
+    <SafeAreaView style={styles.container}>
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>FYP Event Manager</Text>
+        <Text style={styles.headerSubtitle}>Mobile Demo</Text>
+      </View>
+      <EventsList />
+      <StatusBar style="light" />
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
+    backgroundColor: '#f7fafc',
+  },
+  header: {
+    backgroundColor: '#4a5568',
+    padding: 20,
+    paddingTop: 40,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: 'white',
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: 'rgba(255, 255, 255, 0.9)',
+    marginTop: 4,
   },
 });
