@@ -1,5 +1,6 @@
 import { SupabaseClient } from "@supabase/supabase-js";
-import { Event, EventSchema } from "shared";
+import type { Event } from "shared";
+import { EventSchema } from "shared";
 
 const EVENTS_TABLE = "events";
 

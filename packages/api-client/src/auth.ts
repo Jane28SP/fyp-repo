@@ -1,5 +1,5 @@
 import { SupabaseClient } from "@supabase/supabase-js";
-import { User } from "shared";
+import type { User } from "shared";
 
 export async function signIn(
   supabase: SupabaseClient,
