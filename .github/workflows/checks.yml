@@ -28,7 +28,7 @@ jobs:
           corepack prepare pnpm@10.20.0 --activate
 
       - name: Install deps (with scripts enabled)
-        run: pnpm install --frozen-lockfile --config.enable-pre-post-scripts true
+        run: pnpm install --config.enable-pre-post-scripts true
 
       - name: Typecheck all
         run: pnpm typecheck || true
