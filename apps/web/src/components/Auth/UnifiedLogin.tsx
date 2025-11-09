@@ -22,7 +22,7 @@ const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onLoginSuccess }) => {
       setError('');
 
       if (isSignUp) {
-        // 注册新用户，启用邮箱验证
+        // Register new user, enable email verification
         const { data: { user }, error: signUpError } = await supabase.auth.signUp({
           email,
           password,
@@ -31,11 +31,44 @@ const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onLoginSuccess }) => {
           }
         });
 
-        if (signUpError) throw signUpError;
+        // Check for duplicate user error
+        if (signUpError) {
+          // Check if error is due to user already existing
+          const errorMessage = signUpError.message?.toLowerCase() || '';
+          if (errorMessage.includes('already registered') || 
+              errorMessage.includes('user already registered') ||
+              errorMessage.includes('email address has already been registered') ||
+              errorMessage.includes('user already exists') ||
+              errorMessage.includes('duplicate key value')) {
+            setError('⚠️ This email is already registered. Please sign in instead.');
+            setIsSignUp(false); // Switch to sign in mode
+            return;
+          }
+          throw signUpError;
+        }
 
-        // 即使有错误，如果用户已创建，也继续创建组织者记录
+        // Check if user was actually created (not just returned existing user)
+        // Supabase may return existing user without error in some cases
+        if (user) {
+          // If user already has confirmed email, they're trying to register again
+          if (user.email_confirmed_at) {
+            setError('⚠️ This email is already registered and verified. Please sign in instead.');
+            setIsSignUp(false); // Switch to sign in mode
+            return;
+          }
+          
+          // Check if user was just created (new user won't have confirmed_at yet)
+          // But if we get here and no error, it's likely a new user
+          // However, Supabase might return existing unconfirmed user
+          // In that case, we should still show success but mention they need to verify
+        }
+
+        // Note: user_profiles record is automatically created by database trigger
+        // No need to manually insert here to avoid RLS policy violations
+
+        // Even if there's an error, if user was created, continue to create organizer record
         if (user && userType === 'organizer') {
-          // 创建组织者记录
+          // Create organizer record
           const { error: orgError } = await supabase
             .from('organizers')
             .insert([
@@ -48,17 +81,17 @@ const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onLoginSuccess }) => {
 
           if (orgError) {
             console.error('Failed to create organizer record:', orgError);
-            // 不阻止用户看到成功消息
+            // Don't prevent user from seeing success message
           }
         }
 
-        // 显示成功消息，提示用户检查邮箱
+        // Show success message, prompt user to check email
         setSuccessMessage(userType === 'organizer' ? 
           '🎉 Registration successful! Please check your email to verify your account. Your organizer account will be pending approval after verification.' : 
           '✅ Registration successful! Please check your email to verify your account and start exploring events!'
         );
       } else {
-        // 登录
+        // Login
         const { data: { user }, error: signInError } = await supabase.auth.signInWithPassword({
           email,
           password,
@@ -66,9 +99,9 @@ const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onLoginSuccess }) => {
 
         if (signInError) throw signInError;
 
-        // 检查邮箱是否已验证
+        // Check if email is verified
         if (user && !user.email_confirmed_at) {
-          // 如果邮箱未验证，发送新的验证邮件
+          // If email is not verified, send new verification email
           await supabase.auth.resend({
             type: 'signup',
             email: email,
@@ -78,11 +111,11 @@ const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onLoginSuccess }) => {
           return;
         }
 
-        // 登录成功，显示成功消息
+        // Login successful, show success message
         setSuccessMessage('🎉 Login successful! Redirecting to dashboard...');
 
         if (user && userType === 'organizer') {
-          // 检查是否为组织者
+          // Check if user is an organizer
           const { data: organizer, error: roleError } = await supabase
             .from('organizers')
             .select('*')
@@ -99,22 +132,27 @@ const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onLoginSuccess }) => {
             throw new Error('Your organizer account has not been approved yet');
           }
 
-          // 组织者登录成功后直接跳转到组织者仪表板
+          // After organizer login success, redirect to organizer dashboard
           setTimeout(() => {
             window.location.href = '/organizer/dashboard';
           }, 1500);
           return;
         }
 
-        // 普通用户登录成功，刷新页面以加载用户状态
+        // Regular user login success, refresh page to load user state
         setTimeout(() => {
           window.location.href = '/';
         }, 1500);
       }
     } catch (error: any) {
       console.error('Authentication failed:', error);
+      // More detailed error handling
       if (error.message?.includes('Invalid API key') || error.message?.includes('API')) {
-        setError('⚠️ Supabase not configured. Please use Quick Demo Mode below to try the platform!');
+        setError('⚠️ Supabase configuration error. Please check your configuration.');
+      } else if (error.message?.includes('Invalid login credentials') || error.message?.includes('Email not confirmed')) {
+        setError(error.message || 'Invalid email or password. Please check your credentials.');
+      } else if (error.message?.includes('network') || error.message?.includes('fetch')) {
+        setError('⚠️ Network error. Please check your internet connection and try again.');
       } else {
         setError(error.message || 'Operation failed, please try again');
       }
@@ -123,26 +161,6 @@ const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onLoginSuccess }) => {
     }
   };
 
-  const handleMockLogin = () => {
-    const mockUser = {
-      id: userType === 'organizer' ? 'mock-organizer-user' : 'mock-user',
-      email: userType === 'organizer' ? 'organizer@example.com' : 'user@example.com',
-      user_metadata: { role: userType }
-    };
-    
-    localStorage.setItem('mockUser', JSON.stringify(mockUser));
-    localStorage.setItem('mockUserType', userType);
-    
-    console.log('UnifiedLogin: Mock login completed', { userType, mockUser });
-    
-    if (userType === 'organizer') {
-      localStorage.setItem('mockOrganizer', 'true');
-      // Organizer mock login - redirect to organizer dashboard
-      window.location.href = '/organizer/dashboard';
-      return;
-    }
-    onLoginSuccess();
-  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-red-50 flex flex-col justify-center py-12 sm:px-6 lg:px-8 relative overflow-hidden">
@@ -172,8 +190,8 @@ const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onLoginSuccess }) => {
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md relative z-10">
         <div className="bg-white/90 backdrop-blur-xl py-8 px-4 shadow-2xl border-2 border-amber-100 sm:rounded-2xl sm:px-10">
-          {/* 用户类型选择 */}
-          <div className="mb-6">
+          {/* User type selection - Hidden */}
+          {/* <div className="mb-6">
             <label className="block text-sm font-bold text-gray-900 mb-4">
               🎯 Select Role
             </label>
@@ -226,7 +244,7 @@ const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onLoginSuccess }) => {
                 </div>
               </button>
             </div>
-          </div>
+          </div> */}
 
           <form className="space-y-5" onSubmit={handleSubmit}>
             {error && (
@@ -330,34 +348,6 @@ const UnifiedLogin: React.FC<UnifiedLoginProps> = ({ onLoginSuccess }) => {
               </button>
             </div>
           </form>
-
-          <div className="mt-6">
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t-2 border-gray-200" />
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-4 bg-white text-gray-500 font-semibold">
-                  OR
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-6">
-              <button
-                onClick={handleMockLogin}
-                className="w-full flex justify-center items-center py-3.5 px-4 border-2 border-amber-400 rounded-xl shadow-md text-sm font-bold text-amber-900 bg-gradient-to-r from-amber-100 to-yellow-100 hover:from-amber-200 hover:to-yellow-200 hover:border-amber-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-amber-500 transition-all duration-200 transform hover:scale-105"
-              >
-                <svg className="w-5 h-5 mr-2 text-amber-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-                </svg>
-                ⚡ Try Demo Mode ({userType === 'organizer' ? 'Organizer' : 'Attendee'})
-              </button>
-              <p className="mt-2 text-center text-xs text-gray-500">
-                👆 Click here to explore without registration!
-              </p>
-            </div>
-          </div>
         </div>
       </div>
 

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Link, Navigate, useLocation } from 'react-router-dom';
 import { supabase } from './lib/supabase';
-import { initializeSampleEvents } from './utils/initData';
 import './App.css';
 import UnifiedLogin from './components/Auth/UnifiedLogin';
 import EventList from './components/Events/EventList';
@@ -9,7 +8,6 @@ import BookingModal from './components/Bookings/BookingModal';
 import AccountDashboard from './components/Dashboard/AccountDashboard';
 import OrganizerDashboard from './components/Organizer/OrganizerDashboard';
 import OrganizerRoute from './components/Auth/OrganizerRoute';
-import NotificationCenter from './components/Notifications/NotificationCenter';
 import HeroBanner from './components/Banner/HeroBanner';
 import Testimonials from './components/Testimonials/Testimonials';
 import ContactSection from './components/Contact/ContactSection';
@@ -26,122 +24,64 @@ function App() {
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [userBookings, setUserBookings] = useState<string[]>([]);
-  const [useMockMode, setUseMockMode] = useState(false);
   const [isOrganizer, setIsOrganizer] = useState(false);
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [showLogoutSuccess, setShowLogoutSuccess] = useState(false);
   
-  // Shopping Cart state
   const [cartItems, setCartItems] = useState<Array<{ event: Event; quantity: number }>>([]);
   const [showCart, setShowCart] = useState(false);
+  const [userAvatar, setUserAvatar] = useState<string>('');
 
   useEffect(() => {
-    // 检查模拟用户
-    const mockUser = localStorage.getItem('mockUser');
-    const mockUserType = localStorage.getItem('mockUserType');
-    const mockOrganizer = localStorage.getItem('mockOrganizer');
-    
-    console.log('App.tsx: Checking mock user state', { mockUser: !!mockUser, mockUserType, mockOrganizer });
-    
-    if (mockUser) {
-      const parsedUser = JSON.parse(mockUser);
-      setUser(parsedUser);
-      setUseMockMode(true);
-      const isOrganizerResult = mockOrganizer === 'true' || mockUserType === 'organizer';
-      setIsOrganizer(isOrganizerResult);
-      
-      console.log('App.tsx: Mock user logged in', { 
-        user: parsedUser, 
-        isOrganizer: isOrganizerResult,
-        mockUserType,
-        mockOrganizer
-      });
-      
-      setLoading(false);
-      return;
-    }
-
-    // 检查真实用户登录状态
     const checkAuth = async () => {
       try {
-        // 先检查是否有 Supabase session 存储在本地
-        const hasLocalSession = Object.keys(localStorage).some(key => 
-          key.startsWith('sb-') && localStorage.getItem(key)?.includes('access_token')
-        );
+        setLoading(false);
         
-        // 如果有本地 session，延长超时时间，因为可能是网络慢而不是没有 session
-        const timeoutDuration = hasLocalSession ? 10000 : 5000;
+        const { data: { session }, error } = await supabase.auth.getSession();
         
-        // 添加超时保护
-        const timeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Connection timeout')), timeoutDuration)
-        );
-        
-        const authPromise = supabase.auth.getSession();
-        
-        const { data: { session }, error } = await Promise.race([authPromise, timeoutPromise]) as any;
-        
-        // 如果超时但有本地 session，不要清空用户状态，等待 onAuthStateChange 更新
-        if (error && !hasLocalSession) {
-          throw error;
+        if (error) {
+          console.error('Session check error:', error);
         }
         
         if (session?.user) {
           setUser(session.user);
           
-          // 检查是否为组织者
           try {
-            const { data: organizer } = await supabase
+            const organizerPromise = supabase
               .from('organizers')
               .select('*')
               .eq('user_id', session.user.id)
               .single();
             
+            const timeoutPromise = new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Timeout')), 3000)
+            );
+            
+            const { data: organizer } = await Promise.race([
+              organizerPromise,
+              timeoutPromise
+            ]) as any;
+            
             setIsOrganizer(!!organizer);
           } catch (orgError) {
-            // 组织者检查失败不影响登录状态
-            console.log('Failed to check organizer status:', orgError);
             setIsOrganizer(false);
           }
-        } else if (!hasLocalSession) {
-          // 只有在没有本地 session 时才清空用户状态
+        } else {
           setUser(null);
           setIsOrganizer(false);
         }
-        // 如果有本地 session 但没有获取到 session，等待 onAuthStateChange 处理
-        
-        setLoading(false);
       } catch (error) {
-        console.log('Supabase connection failed:', error);
-        // 检查是否有本地 session，如果有就不要清空用户状态
-        const hasLocalSession = Object.keys(localStorage).some(key => 
-          key.startsWith('sb-') && localStorage.getItem(key)?.includes('access_token')
-        );
-        
-        if (!hasLocalSession) {
-          // 只有在确实没有本地 session 时才切换到 mock 模式
-          setUseMockMode(true);
-          setUser(null);
-        } else {
-          // 有本地 session 但请求失败，等待 onAuthStateChange 来恢复状态
-          console.log('Connection failed but local session exists, waiting for auth state change...');
-        }
-        setLoading(false);
+        console.error('Auth check failed:', error);
       }
     };
 
     checkAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth state changed:', event, session?.user?.email);
-      
-      // 只在真正有变化时更新状态，避免不必要的清空
       if (session?.user) {
         setUser(session.user);
-        setUseMockMode(false); // 确保不是 mock 模式
         
-        // 检查是否为组织者
         try {
           const { data: organizer } = await supabase
             .from('organizers')
@@ -151,36 +91,63 @@ function App() {
           
           setIsOrganizer(!!organizer);
         } catch (orgError) {
-          console.log('Failed to check organizer status:', orgError);
           setIsOrganizer(false);
         }
       } else if (event === 'SIGNED_OUT') {
-        // 只在明确登出时才清空状态
         setUser(null);
         setIsOrganizer(false);
       }
-      // 如果是 'INITIAL_SESSION' 或 'TOKEN_REFRESHED' 事件但没有 session，
-      // 可能只是还没有加载完成，不要立即清空状态
     });
 
-    initializeSampleEvents();
     return () => subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
     if (user) {
       fetchUserBookings();
+      const loadAvatar = async () => {
+        try {
+          const { data, error } = await supabase
+            .from('user_profiles')
+            .select('avatar_url')
+            .eq('user_id', user.id)
+            .single();
+
+          if (!error && data?.avatar_url) {
+            setUserAvatar(data.avatar_url);
+          } else {
+            const profile = JSON.parse(localStorage.getItem(`userProfile_${user.id}`) || 'null');
+            if (profile?.avatarUrl) {
+              setUserAvatar(profile.avatarUrl);
+            }
+          }
+        } catch (error) {
+          console.error('Error loading avatar:', error);
+          const profile = JSON.parse(localStorage.getItem(`userProfile_${user.id}`) || 'null');
+          if (profile?.avatarUrl) {
+            setUserAvatar(profile.avatarUrl);
+          }
+        }
+      };
+      loadAvatar();
     }
-  }, [user]);  // fetchUserBookings is defined in the same component, no need to add as dependency
+  }, [user]);
+
+  useEffect(() => {
+    const handleAvatarUpdate = (event: CustomEvent) => {
+      if (user && event.detail?.avatarUrl) {
+        setUserAvatar(event.detail.avatarUrl);
+      }
+    };
+
+    window.addEventListener('avatarUpdated', handleAvatarUpdate as EventListener);
+    return () => {
+      window.removeEventListener('avatarUpdated', handleAvatarUpdate as EventListener);
+    };
+  }, [user]);
 
   const fetchUserBookings = async () => {
     if (!user) return;
-    
-    if (useMockMode) {
-      const mockBookings = JSON.parse(localStorage.getItem('mockBookings') || '[]');
-      setUserBookings(mockBookings);
-      return;
-    }
     
     try {
       const { data, error } = await supabase
@@ -198,39 +165,27 @@ function App() {
   };
 
   const handleLoginSuccess = () => {
-    // 登录成功后的处理 - 对于普通用户，刷新页面状态
-    // 组织者用户会在 UnifiedLogin 中直接重定向，不会到达这里
     window.location.reload();
   };
 
   const handleLogout = async () => {
     setIsLoggingOut(true);
     try {
-      // 让用户看到动画
       await new Promise(resolve => setTimeout(resolve, 400));
 
-      // 永远清理本地 mock 状态
-      localStorage.removeItem('mockUser');
-      localStorage.removeItem('mockBookings');
-      localStorage.removeItem('mockOrganizer');
-      localStorage.removeItem('mockUserType');
-
-      // 本地登出（不依赖网络）- 包一层超时保护
       try {
         const localSignOut = supabase.auth.signOut({ scope: 'local' } as any);
         await Promise.race([
           localSignOut,
           new Promise((resolve) => setTimeout(resolve, 600))
         ]);
-        // 彻底移除 supabase 本地 token（某些浏览器可能仍保留）
         Object.keys(localStorage)
           .filter((k) => k.startsWith('sb-') || k.startsWith('supabase'))
           .forEach((k) => localStorage.removeItem(k));
       } catch (e) {
-        console.warn('Local signOut failed (safe to ignore):', e);
+        console.warn('Local signOut failed:', e);
       }
 
-      // 远程登出（有网络再做）- 超时 1.2s，防止挂起
       try {
         const remoteSignOut = supabase.auth.signOut();
         await Promise.race([
@@ -238,10 +193,9 @@ function App() {
           new Promise((resolve) => setTimeout(resolve, 1200))
         ]);
       } catch (e) {
-        console.warn('Network signOut failed (safe to ignore):', e);
+        console.warn('Network signOut failed:', e);
       }
 
-      // 清状态
       setUser(null);
       setUserBookings([]);
       setIsOrganizer(false);
@@ -265,23 +219,7 @@ function App() {
   };
 
   const handleBookingSuccess = () => {
-    if (useMockMode) {
-      const mockBookings = JSON.parse(localStorage.getItem('mockBookings') || '[]');
-      if (selectedEvent) {
-        mockBookings.push(selectedEvent.id);
-        localStorage.setItem('mockBookings', JSON.stringify(mockBookings));
-        
-        const mockEvents = JSON.parse(localStorage.getItem('mockEvents') || '[]');
-        if (!mockEvents.find((e: any) => e.id === selectedEvent.id)) {
-          mockEvents.push(selectedEvent);
-          localStorage.setItem('mockEvents', JSON.stringify(mockEvents));
-        }
-        
-        setUserBookings(mockBookings);
-      }
-    } else {
       fetchUserBookings();
-    }
   };
 
   const handleAddToCart = (event: Event) => {
@@ -348,14 +286,16 @@ function App() {
     );
   }
 
+  const Navigation = () => {
+    const location = useLocation();
+    const searchParams = new URLSearchParams(location.search);
+    const isBookingsPage = location.pathname === '/dashboard' && searchParams.get('tab') === 'bookings';
+    const isEventsPage = location.pathname === '/';
+
   return (
-    <Router>
-      <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-red-50">
-        {/* 导航栏 */}
         <nav className="bg-white shadow-md border-b border-red-100 sticky top-0 z-50 backdrop-blur-sm bg-white/95">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex justify-between items-center h-16">
-              {/* 左侧：标题 */}
               <div className="flex items-center">
                 <Link to="/" className="flex items-center space-x-3 text-xl font-bold transition-all">
                   <img 
@@ -365,40 +305,41 @@ function App() {
                   />
                   <span style={{ color: 'rgb(228, 40, 31)' }}>JomEvent!</span>
                 </Link>
-                {Boolean(localStorage.getItem('mockUser')) && (
-                  <span
-                    className="ml-4 px-3 py-1 rounded-full text-xs font-bold border shadow-sm select-none"
-                    style={{ backgroundColor: '#FFF7E6', color: '#A16207', borderColor: '#FCD34D' }}
-                    title="You are viewing demo data. Some actions may be simulated."
-                  >
-                    Demo Mode
-                  </span>
-                )}
               </div>
               
-              {/* 中间：导航链接 */}
               <div className="hidden md:flex items-center space-x-4">
-                {/* Only show attendee navigation when not in organizer mode */}
                 {!isOrganizer && (
                   <>
                     <Link
                       to="/"
-                      className="flex items-center px-4 py-2 rounded-lg text-sm font-medium text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 transition-all duration-200"
+                    className={`flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                      isEventsPage
+                        ? 'text-white bg-gradient-to-r from-orange-500 to-red-500 shadow-md border-b-2 border-orange-600' 
+                        : 'text-gray-600 hover:text-indigo-600 hover:bg-indigo-50'
+                    }`}
                     >
-                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                      <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                        <path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                        <polyline points="9 22 9 12 15 12 15 22"></polyline>
                       </svg>
-                      Events
+                      Home
                     </Link>
                     
                     {user && (
                       <>
                         <Link
-                          to="/dashboard"
-                          className="flex items-center px-4 py-2 rounded-lg text-sm font-medium text-gray-600 hover:text-indigo-600 hover:bg-indigo-50 transition-all duration-200"
+                        to="/dashboard?tab=bookings"
+                        className={`flex items-center px-4 py-2 rounded-lg text-sm font-medium transition-all duration-200 ${
+                          isBookingsPage
+                            ? 'text-white bg-gradient-to-r from-orange-500 to-red-500 shadow-md border-b-2 border-orange-600' 
+                            : 'text-gray-600 hover:text-indigo-600 hover:bg-indigo-50'
+                        }`}
                         >
-                          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                          <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                            <path d="M8 2v4"></path>
+                            <path d="M16 2v4"></path>
+                            <rect width="18" height="18" x="3" y="4" rx="2"></rect>
+                            <path d="M3 10h18"></path>
                           </svg>
                           My Bookings
                         </Link>
@@ -422,18 +363,20 @@ function App() {
 
               </div>
               
-              {/* 右侧：用户信息和登出 */}
               <div className="flex items-center space-x-4">
-                {user && (
-                  <NotificationCenter userId={user.id} />
-                )}
                 {user ? (
                   <>
                     <div className="hidden sm:flex items-center space-x-3">
                       <div className="flex items-center space-x-2">
-                        <div className="w-8 h-8 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full flex items-center justify-center">
-                          <span className="text-white text-sm font-semibold">{user.email?.charAt(0).toUpperCase()}</span>
-                        </div>
+                        <img 
+                          src={userAvatar || `https://ui-avatars.com/api/?name=${encodeURIComponent(user.email?.split('@')[0] || 'User')}&background=E4281F&color=fff&size=32&bold=true`}
+                          alt="avatar" 
+                          className="w-8 h-8 rounded-full object-cover border-2 border-white shadow-md"
+                          onError={(e) => {
+                            const emailPrefix = user.email?.split('@')[0] || 'User';
+                            e.currentTarget.src = `https://ui-avatars.com/api/?name=${encodeURIComponent(emailPrefix)}&background=E4281F&color=fff&size=32&bold=true`;
+                          }}
+                        />
                         <span className="text-sm font-medium text-gray-700">Welcome, {user.email}</span>
                       </div>
                     </div>
@@ -462,8 +405,14 @@ function App() {
             </div>
           </div>
         </nav>
+    );
+  };
 
-        {/* 主要内容 */}
+  return (
+    <Router>
+      <div className="min-h-screen bg-gradient-to-br from-amber-50 via-orange-50 to-red-50">
+        <Navigation />
+
         <Routes>
           <Route path="/verify-email" element={<EmailVerification />} />
           
@@ -478,20 +427,18 @@ function App() {
               ) : (
                 <>
                   <div className="px-4 py-6 sm:px-0">
-                    {/* Hero Banner */}
                     <HeroBanner />
                     
                     <EventList 
                       onBook={handleBookEvent} 
                       onAddToCart={handleAddToCart}
                       userBookings={userBookings} 
+                      userId={user?.id}
                     />
                   </div>
                   
-                  {/* Testimonials Section */}
                   <Testimonials />
                   
-                  {/* Contact Section */}
                   <ContactSection />
                 </>
               )}
@@ -509,7 +456,7 @@ function App() {
               {isOrganizer ? (
                 <Navigate to="/organizer/dashboard" replace />
               ) : (
-                user ? <AccountDashboard userId={user.id} /> : <Navigate to="/login" replace />
+                user ? <AccountDashboard userId={user.id} userEmail={user.email} /> : <Navigate to="/login" replace />
               )}
             </main>
           } />
@@ -527,10 +474,8 @@ function App() {
           } />
         </Routes>
 
-        {/* Footer */}
         <Footer />
 
-        {/* 预订模态框 */}
         <BookingModal
           event={selectedEvent}
           isOpen={showBookingModal}
@@ -548,7 +493,6 @@ function App() {
           />
         )}
 
-        {/* 退出确认对话框 */}
         {showLogoutConfirm && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 animate-fadeIn">
             <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl transform transition-all animate-scaleIn">
@@ -557,7 +501,7 @@ function App() {
                   <svg className="h-8 w-8 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
                   </svg>
-                </div>
+      </div>
                 
                 <h3 className="text-2xl font-bold text-gray-900 mb-2">Sign Out?</h3>
                 <p className="text-gray-600 mb-8">Are you sure you want to sign out? You'll need to login again to access your bookings.</p>
@@ -587,14 +531,13 @@ function App() {
                     ) : (
                       'Yes, Sign Out'
                     )}
-                  </button>
+        </button>
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* 退出成功提示 */}
         {showLogoutSuccess && (
           <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
             <div className="bg-white rounded-3xl max-w-md w-full shadow-2xl p-8 text-center animate-scaleIn">

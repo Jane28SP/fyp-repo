@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { supabase } from '../supabaseClient';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { RootStackParamList } from '../navigation/AppNavigator';
+import { RootStackParamList } from '../types/navigation';
 import { Event } from '../../../web/src/lib/supabase';
 
 type EventListScreenProps = {

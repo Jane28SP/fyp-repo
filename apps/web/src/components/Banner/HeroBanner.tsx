@@ -1,18 +1,12 @@
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
 
 const HeroBanner: React.FC = () => {
-  const navigate = useNavigate();
 
   const handleExploreEvents = () => {
     const eventListSection = document.getElementById('event-list-section');
     if (eventListSection) {
       eventListSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
-  };
-
-  const handleCreateEvent = () => {
-    navigate('/login');
   };
 
   return (
@@ -45,18 +39,12 @@ const HeroBanner: React.FC = () => {
           </p>
           
           {/* Call to action buttons */}
-          <div className="mt-8 flex flex-col sm:flex-row gap-4 justify-center items-center">
+          <div className="mt-8 flex justify-center items-center">
             <button 
               onClick={handleExploreEvents}
               className="px-8 py-4 bg-gradient-to-r from-cyan-500 to-blue-600 text-white font-bold text-lg rounded-xl shadow-2xl hover:from-cyan-600 hover:to-blue-700 transform hover:scale-105 transition-all duration-300 hover:shadow-cyan-500/25"
             >
               Explore Events
-            </button>
-            <button 
-              onClick={handleCreateEvent}
-              className="px-8 py-4 bg-white/20 backdrop-blur-sm text-white font-semibold text-lg rounded-xl border border-white/30 hover:bg-white/30 transition-all duration-300 hover:shadow-lg"
-            >
-              Create Event
             </button>
           </div>
         </div>

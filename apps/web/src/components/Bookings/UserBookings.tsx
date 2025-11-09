@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Booking, Event } from '../../lib/supabase';
+import { Booking, Event, supabase } from '../../lib/supabase';
 import QRCode from '../Events/QRCode';
 
 interface UserBookingsProps {
@@ -28,134 +28,82 @@ const UserBookings: React.FC<UserBookingsProps> = ({ userId }) => {
       setLoading(true);
       setError('');
 
-      const savedBookings = localStorage.getItem(`userBookings_${userId}`);
-      
-      if (savedBookings) {
-        setBookings(JSON.parse(savedBookings));
-        setLoading(false);
+      // Use direct REST API for better reliability (same approach as EventList)
+      const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL || 'https://sznagdhpnjexuuydnimh.supabase.co';
+      const SUPABASE_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN6bmFnZGhwbmpleHV1eWRuaW1oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ1Nzg4NjEsImV4cCI6MjA3MDE1NDg2MX0.TS8kgZjDjGhNSutksFEwJf7kslrqUddaChEbzdNqpl4';
+
+      // Step 1: Fetch bookings
+      const bookingsResponse = await fetch(
+        `${SUPABASE_URL}/rest/v1/bookings?user_id=eq.${userId}&order=created_at.desc`,
+        {
+          headers: {
+            'apikey': SUPABASE_KEY,
+            'Authorization': `Bearer ${SUPABASE_KEY}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation',
+          },
+        }
+      );
+
+      if (!bookingsResponse.ok) {
+        throw new Error(`Failed to load bookings: ${bookingsResponse.status}`);
+      }
+
+      const bookingsData = await bookingsResponse.json();
+
+      if (!bookingsData || bookingsData.length === 0) {
+        setBookings([]);
         return;
       }
 
-      // Mock data
-      const mockBookings: (Booking & { event: Event })[] = [
-        {
-          id: '1',
-          user_id: userId,
-          event_id: '1',
-          status: 'cancelled',
-          rsvp_status: 'not_going',
-          created_at: new Date().toISOString(),
-          event: {
-            id: '1',
-            title: 'Tech Talk: React 19 New Features',
-            description: 'Deep dive into React 19 latest features.',
-            date: '2025-05-15',
-            time: '14:00-16:00',
-            location: 'Kuala Lumpur Convention Centre, Hall 1',
-            capacity: 50,
-            price: 50,
-            category: 'Technology',
-            image_url: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=400&h=300&fit=crop',
-            created_at: '2024-01-01T00:00:00Z',
-            organizer_id: 'mock-organizer-1'
-          }
-        },
-        {
-          id: '2',
-          user_id: userId,
-          event_id: '2',
-          status: 'confirmed',
-          rsvp_status: 'going',
-          created_at: new Date().toISOString(),
-          event: {
-            id: '2',
-            title: 'Startup Investment Forum',
-            description: 'Network with renowned investors.',
-            date: '2025-12-20',
-            time: '09:00-17:00',
-            location: 'Petaling Jaya Convention Centre, Selangor',
-            capacity: 100,
-            price: 299,
-            category: 'Business',
-            image_url: 'https://images.unsplash.com/photo-1552664730-d307ca884978?w=400&h=300&fit=crop',
-            created_at: '2024-01-01T00:00:00Z',
-            organizer_id: 'mock-organizer-2'
-          }
-        },
-        {
-          id: '3',
-          user_id: userId,
-          event_id: '3',
-          status: 'confirmed',
-          rsvp_status: 'maybe',
-          created_at: new Date().toISOString(),
-          event: {
-            id: '3',
-            title: 'Food Festival: International Cuisine',
-            description: 'Taste delicious food from around the world.',
-            date: '2025-11-25',
-            time: '11:00-20:00',
-            location: 'Malacca Heritage Food Court, Jonker Street',
-            capacity: 200,
-            price: 80,
-            category: 'Food & Drink',
-            image_url: 'https://images.unsplash.com/photo-1555939594-58d7cb561ad1?w=400&h=300&fit=crop',
-            created_at: '2024-01-01T00:00:00Z',
-            organizer_id: 'mock-organizer-4'
-          }
-        },
-        {
-          id: '4',
-          user_id: userId,
-          event_id: '4',
-          status: 'checked_in',
-          rsvp_status: 'going',
-          created_at: new Date().toISOString(),
-          event: {
-            id: '4',
-            title: 'Yoga Workshop',
-            description: 'Professional yoga instructor guidance.',
-            date: '2024-09-25',
-            time: '10:00-12:00',
-            location: 'Penang Yoga Studio, George Town',
-            capacity: 30,
-            price: 150,
-            category: 'Health & Wellness',
-            image_url: 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=400&h=300&fit=crop',
-            created_at: '2024-01-01T00:00:00Z',
-            organizer_id: 'mock-organizer-3'
-          }
-        },
-        {
-          id: '5',
-          user_id: userId,
-          event_id: '5',
-          status: 'confirmed',
-          rsvp_status: 'going',
-          created_at: new Date().toISOString(),
-          event: {
-            id: '5',
-            title: 'Concert: Classical Meets Modern',
-            description: 'Famous symphony orchestra performance.',
-            date: '2025-12-20',
-            time: '19:30-21:30',
-            location: 'Dewan Filharmonik Petronas, KLCC',
-            capacity: 500,
-            price: 380,
-            category: 'Music',
-            image_url: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&h=300&fit=crop',
-            created_at: '2024-01-01T00:00:00Z',
-            organizer_id: 'mock-organizer-5'
-          }
-        }
-      ];
+      // Step 2: Get all unique event IDs
+      const eventIds = Array.from(new Set(bookingsData.map((b: any) => b.event_id)));
+      
+      if (eventIds.length === 0) {
+        setBookings([]);
+        return;
+      }
 
-      setBookings(mockBookings);
-      localStorage.setItem(`userBookings_${userId}`, JSON.stringify(mockBookings));
-      setLoading(false);
+      // Step 3: Fetch all events in one query using 'in' operator
+      const eventsResponse = await fetch(
+        `${SUPABASE_URL}/rest/v1/events?select=*&id=in.(${eventIds.join(',')})`,
+        {
+          headers: {
+            'apikey': SUPABASE_KEY,
+            'Authorization': `Bearer ${SUPABASE_KEY}`,
+            'Content-Type': 'application/json',
+          },
+        }
+      );
+
+      if (!eventsResponse.ok) {
+        throw new Error(`Failed to load events: ${eventsResponse.status}`);
+      }
+
+      const eventsData = await eventsResponse.json();
+      
+      // Step 4: Create a map of events by ID for quick lookup
+      const eventsMap = new Map(eventsData.map((e: any) => [e.id, e]));
+
+      // Step 5: Combine bookings with their events and sort by created_at
+      const bookingsWithEvents = bookingsData
+        .map((booking: any) => ({
+          ...booking,
+          event: eventsMap.get(booking.event_id) || null
+        }))
+        .filter((booking: any) => booking.event !== null) // Filter out bookings without events
+        .sort((a: any, b: any) => {
+          // Sort by created_at descending
+          const dateA = new Date(a.created_at).getTime();
+          const dateB = new Date(b.created_at).getTime();
+          return dateB - dateA;
+        });
+
+      setBookings(bookingsWithEvents);
     } catch (error: any) {
       console.error('Failed to fetch bookings:', error);
-      setError(error.message);
+      setError(error.message || 'Failed to load bookings');
+      setBookings([]);
     } finally {
       setLoading(false);
     }

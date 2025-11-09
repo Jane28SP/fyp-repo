@@ -1,10 +1,10 @@
 import { supabase } from './supabase';
 
 /**
- * 操作类型枚举
+ * Activity type enum
  */
 export enum ActivityType {
-  // 认证相关
+  // Authentication related
   USER_REGISTER = 'user_register',
   USER_LOGIN = 'user_login',
   USER_LOGOUT = 'user_logout',
@@ -15,7 +15,7 @@ export enum ActivityType {
   EVENT_UPDATED = 'event_updated',
   EVENT_DELETED = 'event_deleted',
   
-  // 预订管理
+  // Booking management
   BOOKING_CREATED = 'booking_created',
   BOOKING_CANCELLED = 'booking_cancelled',
   BOOKING_CHECKED_IN = 'booking_checked_in',
@@ -33,10 +33,10 @@ export enum ActivityType {
   PAYMENT_SUCCESS = 'payment_success',
   PAYMENT_FAILED = 'payment_failed',
   
-  // 文件操作
+  // File operations
   IMAGE_UPLOADED = 'image_uploaded',
   
-  // 其他
+  // Other
   ATTENDEE_MANAGED = 'attendee_managed',
   NOTIFICATION_SENT = 'notification_sent',
 }
@@ -91,27 +91,7 @@ async function getIPAddress(): Promise<string | undefined> {
 }
 
 /**
- * 检查是否为Demo账户
- */
-function isDemoAccount(userId?: string): boolean {
-  if (!userId) return false;
-  // 检查是否为mock用户或demo用户
-  const mockUser = localStorage.getItem('mockUser');
-  if (mockUser) {
-    try {
-      const parsed = JSON.parse(mockUser);
-      if (parsed.id === userId || userId.startsWith('mock-')) {
-        return true;
-      }
-    } catch {
-      // ignore
-    }
-  }
-  return userId.startsWith('mock-') || userId.includes('demo');
-}
-
-/**
- * 记录活动日志
+ * Record activity log
  * @param activityType 活动类型
  * @param entityType 实体类型
  * @param entityId 实体ID（可选）
@@ -141,8 +121,8 @@ export async function logActivity(
       userEmail = session?.user?.email;
     }
 
-    // 如果是Demo账户，不记录日志
-    if (!userId || isDemoAccount(userId)) {
+    // Skip if no user ID
+    if (!userId) {
       return;
     }
 
@@ -206,8 +186,8 @@ export async function logBatchActivity(
     const defaultUserId = session?.user?.id;
     const defaultUserEmail = session?.user?.email;
 
-    // 如果是Demo账户，不记录日志
-    if (!defaultUserId || isDemoAccount(defaultUserId)) {
+    // Skip if no user ID
+    if (!defaultUserId) {
       return;
     }
 
@@ -215,11 +195,11 @@ export async function logBatchActivity(
     const deviceInfo = getDeviceInfo();
     const ipAddress = await getIPAddress();
 
-    // 构建日志记录
+    // Build log entries
     const logEntries = logs
       .filter(log => {
         const userId = log.userId || defaultUserId;
-        return userId && !isDemoAccount(userId);
+        return userId;
       })
       .map(log => ({
         user_id: log.userId || defaultUserId!,

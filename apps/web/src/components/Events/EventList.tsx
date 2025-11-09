@@ -7,12 +7,15 @@ interface EventListProps {
   onBook: (event: Event) => void;
   onAddToCart: (event: Event) => void;
   userBookings?: string[];
+  userId?: string;
 }
 
-const EventList: React.FC<EventListProps> = ({ onBook, onAddToCart, userBookings = [] }) => {
+const EventList: React.FC<EventListProps> = ({ onBook, onAddToCart, userBookings = [], userId }) => {
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage] = useState(12); // 12 events per page
   const [filters, setFilters] = useState<EventFilters>({
     search: '',
     category: 'All',
@@ -22,6 +25,81 @@ const EventList: React.FC<EventListProps> = ({ onBook, onAddToCart, userBookings
     minPrice: '',
     maxPrice: '',
   });
+
+  const fetchEvents = async () => {
+    try {
+      setLoading(true);
+      setError('');
+
+      // Use direct REST API for better reliability (same approach as UserBookings)
+      const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL || 'https://sznagdhpnjexuuydnimh.supabase.co';
+      const SUPABASE_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN6bmFnZGhwbmpleHV1eWRuaW1oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ1Nzg4NjEsImV4cCI6MjA3MDE1NDg2MX0.TS8kgZjDjGhNSutksFEwJf7kslrqUddaChEbzdNqpl4';
+
+      // Fetch events using REST API
+      const response = await fetch(
+        `${SUPABASE_URL}/rest/v1/events?select=*`,
+        {
+          headers: {
+            'apikey': SUPABASE_KEY,
+            'Authorization': `Bearer ${SUPABASE_KEY}`,
+            'Content-Type': 'application/json',
+            'Prefer': 'return=representation',
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Failed to load events: ${response.status}`);
+      }
+
+      const data = await response.json();
+
+      // Sort by date ascending (client-side)
+      const sortedData = (data || []).sort((a: Event, b: Event) => {
+        const dateA = new Date(a.date).getTime();
+        const dateB = new Date(b.date).getTime();
+        return dateA - dateB;
+      });
+
+      setEvents(sortedData);
+      if (!sortedData || sortedData.length === 0) {
+        console.warn('No events found in database. Please add events to the Supabase events table.');
+      }
+
+      setLoading(false);
+    } catch (error: any) {
+      console.error('Failed to fetch event data:', error);
+      setError(error.message || 'Error loading events');
+      setLoading(false);
+      setEvents([]);
+    }
+  };
+
+  const handleFilterChange = (newFilters: EventFilters) => {
+    setFilters(newFilters);
+    setCurrentPage(1); // Reset to first page when filters change
+  };
+
+  const handleRefreshClick = () => {
+    fetchEvents();
+  };
+
+  useEffect(() => {
+    let isMounted = true;
+    console.log('EventList mounted, calling fetchEvents...');
+    
+    const loadEvents = async () => {
+      if (isMounted) {
+        await fetchEvents();
+      }
+    };
+    
+    loadEvents();
+    
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const filteredEvents = useMemo(() => {
     return events.filter(event => {
@@ -43,21 +121,9 @@ const EventList: React.FC<EventListProps> = ({ onBook, onAddToCart, userBookings
 
       // Date range filter
       if (filters.startDate && new Date(event.date) < new Date(filters.startDate)) {
-        console.log('Event filtered out by start date:', {
-          eventTitle: event.title,
-          eventDate: event.date,
-          startDateFilter: filters.startDate,
-          eventDateObj: new Date(event.date),
-          startDateObj: new Date(filters.startDate)
-        });
         return false;
       }
       if (filters.endDate && new Date(event.date) > new Date(filters.endDate)) {
-        console.log('Event filtered out by end date:', {
-          eventTitle: event.title,
-          eventDate: event.date,
-          endDateFilter: filters.endDate
-        });
         return false;
       }
 
@@ -73,118 +139,18 @@ const EventList: React.FC<EventListProps> = ({ onBook, onAddToCart, userBookings
     });
   }, [events, filters]);
 
+  // Pagination calculations
+  const totalPages = Math.ceil(filteredEvents.length / itemsPerPage);
+  const startIndex = (currentPage - 1) * itemsPerPage;
+  const endIndex = startIndex + itemsPerPage;
+  const paginatedEvents = filteredEvents.slice(startIndex, endIndex);
+
+  // Reset to page 1 if current page is out of bounds
   useEffect(() => {
-    fetchEvents();
-    
-    // Set up realtime subscription for events
-    const eventsChannel = supabase
-      .channel('events_changes')
-      .on('postgres_changes', 
-        { event: '*', schema: 'public', table: 'events' },
-        (payload) => {
-          console.log('Event changed:', payload);
-          fetchEvents(); // Refresh events when changed
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(eventsChannel);
-    };
-  }, []);
-
-  const fetchEvents = async () => {
-    try {
-      setLoading(true);
-      setError('');
-
-      // Check for mock mode
-      const mockUser = localStorage.getItem('mockUser');
-      const mockEvents = JSON.parse(localStorage.getItem('mockEvents') || '[]');
-      
-      // Try to fetch from Supabase first
-      try {
-        const { data, error } = await supabase
-          .from('events')
-          .select('*')
-          .order('date', { ascending: true });
-
-        if (error) throw error;
-        
-        if (data && data.length > 0) {
-          setEvents(data);
-          setLoading(false);
-          return;
-        }
-      } catch (dbError: any) {
-        console.log('Supabase fetch failed, using mock/localStorage data:', dbError);
-      }
-
-      // Fallback to mock data or localStorage
-      if (mockEvents.length > 0) {
-        setEvents(mockEvents);
-      } else {
-        // Default mock events if nothing in localStorage
-        const defaultMockEvents: Event[] = [
-          {
-            id: '1',
-            title: 'Tech Talk: React 19 New Features',
-            description: 'Deep dive into React 19\'s latest features, including concurrent rendering, automatic batching, and other major updates. Perfect for frontend developers.',
-            date: '2026-03-15',
-            time: '14:00-16:00',
-            location: 'Kuala Lumpur Convention Centre, Hall 1',
-            capacity: 50,
-            price: 0,
-            category: 'Technology',
-            image_url: 'https://images.unsplash.com/photo-1516321318423-f06f85e504b3?w=400&h=300&fit=crop',
-            created_at: '2024-01-01T00:00:00Z',
-            organizer_id: 'mock-organizer-1'
-          },
-          {
-            id: '2',
-            title: 'Startup Investment Forum',
-            description: 'Face-to-face networking with renowned investors, learn about the latest investment trends and startup opportunities.',
-            date: '2025-06-20',
-            time: '09:00-17:00',
-            location: 'Petaling Jaya Convention Centre, Selangor',
-            capacity: 100,
-            price: 299,
-            category: 'Business',
-            image_url: 'https://images.unsplash.com/photo-1552664730-d307ca884978?w=400&h=300&fit=crop',
-            created_at: '2024-01-01T00:00:00Z',
-            organizer_id: 'mock-organizer-2'
-          },
-          {
-            id: '3',
-            title: 'Yoga Workshop',
-            description: 'Professional yoga instructor guidance, suitable for beginners and advanced practitioners. Relax your mind and body, improve your quality of life.',
-            date: '2026-01-25',
-            time: '10:00-12:00',
-            location: 'Penang Yoga Studio, George Town',
-            capacity: 30,
-            price: 150,
-            category: 'Health & Wellness',
-            image_url: 'https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?w=400&h=300&fit=crop',
-            created_at: '2024-01-01T00:00:00Z',
-            organizer_id: 'mock-organizer-3'
-          }
-        ];
-        setEvents(defaultMockEvents);
-        // Store in localStorage for consistency
-        localStorage.setItem('mockEvents', JSON.stringify(defaultMockEvents));
-      }
-
-      setLoading(false);
-    } catch (error: any) {
-      console.error('Failed to fetch event data:', error);
-      setError(error.message || 'Error loading events');
-      setLoading(false);
+    if (currentPage > totalPages && totalPages > 0) {
+      setCurrentPage(1);
     }
-  };
-
-  const handleFilterChange = (newFilters: EventFilters) => {
-    setFilters(newFilters);
-  };
+  }, [currentPage, totalPages]);
 
   if (loading) {
     return (
@@ -210,7 +176,7 @@ const EventList: React.FC<EventListProps> = ({ onBook, onAddToCart, userBookings
           <h3 className="text-lg font-semibold text-gray-900 mb-2">Loading Failed</h3>
           <p className="text-red-600 mb-6">{error}</p>
           <button
-            onClick={fetchEvents}
+            onClick={handleRefreshClick}
             className="inline-flex items-center px-6 py-3 border border-transparent text-sm font-medium rounded-lg text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
           >
             <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -223,16 +189,31 @@ const EventList: React.FC<EventListProps> = ({ onBook, onAddToCart, userBookings
     );
   }
 
-  if (events.length === 0) {
+  if (events.length === 0 && !loading) {
     return (
       <div className="text-center py-12">
-        <div className="text-gray-500 mb-4">No events available</div>
+        <div className="max-w-md mx-auto">
+          <div className="flex items-center justify-center w-16 h-16 bg-gray-100 rounded-full mx-auto mb-4">
+            <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+          </div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-2">No Events Available</h3>
+          <p className="text-gray-600 mb-4">
+            {error 
+              ? 'Unable to load events. Please check your connection and try again.'
+              : 'There are no events in the database. Please add events to the Supabase events table.'}
+          </p>
         <button
-          onClick={fetchEvents}
-          className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700"
+            onClick={handleRefreshClick}
+            className="inline-flex items-center px-6 py-3 border border-transparent text-sm font-medium rounded-lg text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-colors"
         >
+            <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
           Refresh
         </button>
+        </div>
       </div>
     );
   }
@@ -248,21 +229,91 @@ const EventList: React.FC<EventListProps> = ({ onBook, onAddToCart, userBookings
             <span className="px-3 py-1 bg-indigo-100 text-indigo-700 text-sm font-medium rounded-full">
               {filteredEvents.length} events
             </span>
+            {totalPages > 1 && (
+              <span className="text-sm text-gray-500">
+                (Page {currentPage} of {totalPages})
+              </span>
+            )}
           </div>
         </div>
       )}
       
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-        {filteredEvents.map((event) => (
+        {paginatedEvents.map((event) => (
           <EventCard
             key={event.id}
             event={event}
             onBook={onBook}
             onAddToCart={onAddToCart}
             isBooked={false}
+            userId={userId}
           />
         ))}
       </div>
+
+      {/* Pagination Controls */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center space-x-2 mt-8">
+          <button
+            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+            disabled={currentPage === 1}
+            className={`px-4 py-2 rounded-lg font-medium transition-all ${
+              currentPage === 1
+                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                : 'bg-indigo-600 text-white hover:bg-indigo-700'
+            }`}
+          >
+            Previous
+          </button>
+          
+          <div className="flex items-center space-x-1">
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => {
+              // Show first page, last page, current page, and pages around current
+              if (
+                page === 1 ||
+                page === totalPages ||
+                (page >= currentPage - 1 && page <= currentPage + 1)
+              ) {
+                return (
+                  <button
+                    key={page}
+                    onClick={() => setCurrentPage(page)}
+                    className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                      currentPage === page
+                        ? 'bg-indigo-600 text-white'
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    }`}
+                  >
+                    {page}
+                  </button>
+                );
+              } else if (
+                page === currentPage - 2 ||
+                page === currentPage + 2
+              ) {
+                return (
+                  <span key={page} className="px-2 text-gray-500">
+                    ...
+                  </span>
+                );
+              }
+              return null;
+            })}
+          </div>
+
+          <button
+            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+            disabled={currentPage === totalPages}
+            className={`px-4 py-2 rounded-lg font-medium transition-all ${
+              currentPage === totalPages
+                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                : 'bg-indigo-600 text-white hover:bg-indigo-700'
+            }`}
+          >
+            Next
+          </button>
+        </div>
+      )}
       
       {filteredEvents.length === 0 && (
         <div className="text-center py-16">

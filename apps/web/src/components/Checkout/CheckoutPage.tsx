@@ -1,8 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { Event, Booking, PromoCode } from '../../lib/supabase';
 import { supabase } from '../../lib/supabase';
 import QRCode from '../Events/QRCode';
+
+declare global {
+  interface Window {
+    paypal: any;
+  }
+}
 
 interface CartItem {
   event: Event;
@@ -26,8 +32,9 @@ const CheckoutPage: React.FC = () => {
   const [showQR, setShowQR] = useState(false);
   const [promoCode, setPromoCode] = useState('');
   const [promoError, setPromoError] = useState('');
+  const [paypalLoaded, setPaypalLoaded] = useState(false);
+  const paypalButtonRef = useRef<HTMLDivElement>(null);
   
-  // Personal information for each booking
   const [personalInfo, setPersonalInfo] = useState({
     name: '',
     email: '',
@@ -35,7 +42,6 @@ const CheckoutPage: React.FC = () => {
   });
 
   useEffect(() => {
-    // Get checkout data from location state
     const state = location.state as CheckoutData;
     if (state) {
       setCheckoutData(state);
@@ -43,7 +49,6 @@ const CheckoutPage: React.FC = () => {
         setPromoCode(state.appliedPromo.code);
       }
     } else {
-      // If no state, try to get from localStorage (for page refresh)
       const storedCheckout = localStorage.getItem('checkoutData');
       if (storedCheckout) {
         const data = JSON.parse(storedCheckout);
@@ -52,11 +57,134 @@ const CheckoutPage: React.FC = () => {
           setPromoCode(data.appliedPromo.code);
         }
       } else {
-        // No checkout data, redirect to home
         navigate('/');
       }
     }
   }, [location, navigate]);
+
+  useEffect(() => {
+    if (window.paypal) {
+      setPaypalLoaded(true);
+      return;
+    }
+
+    const checkPayPal = setInterval(() => {
+      if (window.paypal) {
+        setPaypalLoaded(true);
+        clearInterval(checkPayPal);
+      }
+    }, 100);
+
+    const timeout = setTimeout(() => {
+      clearInterval(checkPayPal);
+      if (!window.paypal) {
+        console.error('PayPal SDK failed to load');
+      }
+    }, 10000);
+
+    return () => {
+      clearInterval(checkPayPal);
+      clearTimeout(timeout);
+    };
+  }, []);
+
+  const isFormValid = () => {
+    return personalInfo.name.trim() !== '' && 
+           personalInfo.email.trim() !== '' && 
+           personalInfo.phone.trim() !== '' &&
+           /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(personalInfo.email);
+  };
+
+  useEffect(() => {
+    if (!paypalLoaded || !checkoutData || !paypalButtonRef.current) {
+      return;
+    }
+
+    if (!isFormValid()) {
+      if (paypalButtonRef.current) {
+        paypalButtonRef.current.innerHTML = '';
+      }
+      return;
+    }
+
+    paypalButtonRef.current.innerHTML = '';
+    
+    try {
+      if (!window.paypal || !window.paypal.Buttons) {
+        throw new Error('PayPal SDK not loaded');
+      }
+
+      window.paypal.Buttons({
+          createOrder: async (data: any, actions: any) => {
+            try {
+              if (!isFormValid()) {
+                throw new Error('Please fill in all required fields');
+              }
+
+              if (!checkoutData || checkoutData.total <= 0) {
+                throw new Error('Invalid order amount');
+              }
+              
+              const orderData = {
+                purchase_units: [{
+                  amount: {
+                    value: checkoutData.total.toFixed(2),
+                    currency_code: 'MYR'
+                  },
+                  description: checkoutData.cartItems.length === 1 
+                    ? checkoutData.cartItems[0].event.title 
+                    : `${checkoutData.cartItems.length} Event Tickets`
+                }],
+                application_context: {
+                  shipping_preference: 'NO_SHIPPING'
+                }
+              };
+
+              return await actions.order.create(orderData);
+            } catch (error: any) {
+              console.error('PayPal createOrder error:', error);
+              throw error;
+            }
+          },
+          onApprove: async (data: any, actions: any) => {
+            try {
+              const order = await actions.order.capture();
+              await handlePayPalSuccess(order);
+            } catch (error: any) {
+              console.error('Payment capture error:', error);
+              alert('Payment failed: ' + (error.message || 'Unknown error'));
+              setLoading(false);
+            }
+          },
+          onError: (err: any) => {
+            console.error('PayPal error:', err);
+            let errorMessage = 'PayPal payment error occurred. Please try again.';
+            
+            if (err?.message) {
+              errorMessage = `PayPal Error: ${err.message}`;
+            } else if (typeof err === 'string') {
+              errorMessage = `PayPal Error: ${err}`;
+            }
+            
+            alert(errorMessage);
+            setLoading(false);
+          },
+          onCancel: () => {
+            setLoading(false);
+          }
+        }).render(paypalButtonRef.current).catch((renderError: any) => {
+          console.error('PayPal button render error:', renderError);
+          if (paypalButtonRef.current) {
+            paypalButtonRef.current.innerHTML = '<div class="text-red-600 text-sm p-4">PayPal button failed to load. Please refresh the page.</div>';
+          }
+        });
+      } catch (error: any) {
+        console.error('PayPal button initialization error:', error);
+        if (paypalButtonRef.current) {
+          paypalButtonRef.current.innerHTML = `<div class="text-red-600 text-sm p-4">PayPal Error: ${error.message || 'Failed to initialize PayPal button'}. Please refresh the page.</div>`;
+        }
+      }
+  }, [paypalLoaded, checkoutData, personalInfo]);
 
   const calculateSubtotal = () => {
     if (!checkoutData) return 0;
@@ -67,12 +195,10 @@ const CheckoutPage: React.FC = () => {
     if (!checkoutData || !checkoutData.appliedPromo) return 0;
     const subtotal = calculateSubtotal();
     
-    // Check minimum purchase
     if (checkoutData.appliedPromo.min_purchase && subtotal < checkoutData.appliedPromo.min_purchase) {
       return 0;
     }
 
-    // Check validity
     const now = new Date();
     const validFrom = new Date(checkoutData.appliedPromo.valid_from);
     const validUntil = new Date(checkoutData.appliedPromo.valid_until);
@@ -80,7 +206,6 @@ const CheckoutPage: React.FC = () => {
       return 0;
     }
 
-    // Check usage limit
     if (checkoutData.appliedPromo.usage_limit && checkoutData.appliedPromo.usage_count >= checkoutData.appliedPromo.usage_limit) {
       return 0;
     }
@@ -168,7 +293,6 @@ const CheckoutPage: React.FC = () => {
         }
       }
 
-      // Update checkout data with new promo
       const subtotal = calculateSubtotal();
       const discount = calculateDiscountForPromo(subtotal, promo);
       const total = Math.max(0, subtotal - discount);
@@ -222,10 +346,193 @@ const CheckoutPage: React.FC = () => {
     localStorage.setItem('checkoutData', JSON.stringify(updatedData));
   };
 
+  const handlePayPalSuccess = async (order: any) => {
+    if (!checkoutData) return;
+
+    try {
+      setLoading(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) {
+        throw new Error('Please log in to checkout');
+      }
+
+      const bookings: Partial<Booking>[] = [];
+      const createdBookings: Array<{ id: string; eventId: string; userId: string }> = [];
+
+      // Process each cart item
+      for (const item of checkoutData.cartItems) {
+        let discountAmount = 0;
+        let usedPromoCode = '';
+
+        if (checkoutData.appliedPromo) {
+          if (!checkoutData.appliedPromo.event_id || checkoutData.appliedPromo.event_id === item.event.id) {
+            const itemTotal = item.event.price * item.quantity;
+            if (checkoutData.appliedPromo.discount_type === 'percentage') {
+              discountAmount = (itemTotal * checkoutData.appliedPromo.discount_value) / 100;
+              if (checkoutData.appliedPromo.max_discount) {
+                discountAmount = Math.min(discountAmount, checkoutData.appliedPromo.max_discount);
+              }
+            } else {
+              const subtotal = checkoutData.subtotal;
+              discountAmount = (itemTotal / subtotal) * checkoutData.appliedPromo.discount_value;
+            }
+            usedPromoCode = checkoutData.appliedPromo.code;
+          }
+        }
+
+        const discountPerTicket = discountAmount / item.quantity;
+
+        // Create a booking for each ticket
+        for (let i = 0; i < item.quantity; i++) {
+          const { data, error } = await supabase
+            .from('bookings')
+            .insert([{
+              user_id: session.user.id,
+              event_id: item.event.id,
+              status: 'confirmed',
+              promo_code: usedPromoCode || undefined,
+              discount_amount: discountPerTicket || undefined,
+              attendee_name: personalInfo.name,
+              attendee_email: personalInfo.email,
+              attendee_phone: personalInfo.phone,
+              payment_id: order.id,
+              payment_method: 'paypal'
+            }])
+            .select()
+            .single();
+
+          if (error) throw error;
+          if (data) {
+            createdBookings.push({
+              id: data.id,
+              eventId: item.event.id,
+              userId: session.user.id,
+            });
+          }
+        }
+      }
+
+      // Update promo code usage count
+      if (checkoutData.appliedPromo) {
+        await supabase
+          .from('promo_codes')
+          .update({ usage_count: checkoutData.appliedPromo.usage_count + 1 })
+          .eq('id', checkoutData.appliedPromo.id);
+      }
+
+      // Send receipt email
+      try {
+        await sendReceiptEmail(createdBookings, order);
+      } catch (emailError) {
+        console.error('Failed to send receipt email:', emailError);
+        // Don't block the success flow if email fails
+      }
+
+      setCompletedBookings(createdBookings);
+      setShowQR(true);
+      localStorage.removeItem('checkoutData');
+      setLoading(false);
+    } catch (error: any) {
+      console.error('Checkout error:', error);
+      alert(error.message || 'Failed to process payment');
+      setLoading(false);
+    }
+  };
+
+  const sendReceiptEmail = async (bookings: Array<{ id: string; eventId: string; userId: string }>, order: any) => {
+    if (!checkoutData) return;
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) return;
+
+      const eventIds = bookings.map(b => b.eventId);
+      const { data: eventsData } = await supabase
+        .from('events')
+        .select('*')
+        .in('id', eventIds);
+
+      if (!eventsData) return;
+
+      const eventsMap = new Map(eventsData.map(e => [e.id, e]));
+
+      const receiptHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="UTF-8">
+          <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background: #E4281F; color: white; padding: 20px; text-align: center; border-radius: 8px 8px 0 0; }
+            .content { background: #f9f9f9; padding: 20px; border: 1px solid #ddd; }
+            .booking-item { background: white; padding: 15px; margin-bottom: 15px; border-radius: 8px; border-left: 4px solid #E4281F; }
+            .total { background: white; padding: 15px; margin-top: 15px; border-radius: 8px; font-size: 18px; font-weight: bold; }
+            .footer { text-align: center; padding: 20px; color: #666; font-size: 12px; }
+          </style>
+        </head>
+        <body>
+          <div class="container">
+            <div class="header">
+              <h1>JomEvent - Booking Receipt</h1>
+            </div>
+            <div class="content">
+              <p>Dear ${personalInfo.name},</p>
+              <p>Thank you for your booking! Your payment has been confirmed.</p>
+              
+              <h2>Booking Details:</h2>
+              ${bookings.map((booking, index) => {
+                const event = eventsMap.get(booking.eventId);
+                if (!event) return '';
+                return `
+                  <div class="booking-item">
+                    <h3>${event.title}</h3>
+                    <p><strong>Date:</strong> ${event.date} at ${event.time}</p>
+                    <p><strong>Location:</strong> ${event.location}</p>
+                    <p><strong>Booking ID:</strong> ${booking.id}</p>
+                    <p><strong>Price:</strong> RM ${event.price}</p>
+                  </div>
+                `;
+              }).join('')}
+              
+              <div class="total">
+                <p>Total Amount: RM ${checkoutData.total.toLocaleString()}</p>
+                <p>Payment Method: PayPal</p>
+                <p>Transaction ID: ${order.id}</p>
+              </div>
+              
+              <p>Your tickets are confirmed! You can view your bookings and QR codes in your account.</p>
+            </div>
+            <div class="footer">
+              <p>Thank you for choosing JomEvent!</p>
+              <p>If you have any questions, please contact us.</p>
+            </div>
+          </div>
+        </body>
+        </html>
+      `;
+
+      const { error: receiptError } = await supabase
+        .from('email_queue')
+        .insert([{
+          to_email: personalInfo.email,
+          subject: `JomEvent - Booking Receipt #${order.id}`,
+          html_content: receiptHtml,
+          status: 'pending',
+          created_at: new Date().toISOString()
+        }]);
+
+      if (receiptError) {
+        console.error('Failed to queue receipt email:', receiptError);
+      }
+    } catch (error) {
+      console.error('Error sending receipt email:', error);
+    }
+  };
+
   const handlePayPalCheckout = async () => {
     if (!checkoutData) return;
 
-    // Validate personal information
     if (!personalInfo.name.trim()) {
       alert('Please enter your name');
       return;
@@ -239,7 +546,6 @@ const CheckoutPage: React.FC = () => {
       return;
     }
 
-    // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(personalInfo.email)) {
       alert('Please enter a valid email address');
@@ -255,9 +561,7 @@ const CheckoutPage: React.FC = () => {
       const createdBookings: Array<{ id: string; eventId: string; userId: string }> = [];
       let currentUserId = '';
 
-      // Process each cart item
       for (const item of checkoutData.cartItems) {
-        // Check if promo applies to this event
         let discountAmount = 0;
         let usedPromoCode = '';
 
@@ -396,19 +700,13 @@ const CheckoutPage: React.FC = () => {
   };
 
   const generatePayPalUrl = (amount: number, bookings: Array<{ id: string; eventId: string; userId: string }>) => {
-    // In production, this would use PayPal SDK to create a payment
-    // For demo purposes, we'll create a sandbox URL
-    const businessEmail = 'your-paypal-merchant@example.com'; // Replace with your PayPal business email
+    const businessEmail = 'your-paypal-merchant@example.com';
     const itemName = bookings.length === 1 ? 'Event Ticket' : `${bookings.length} Event Tickets`;
     const returnUrl = encodeURIComponent(window.location.origin + '/checkout/success');
     const cancelUrl = encodeURIComponent(window.location.origin + '/checkout');
     
-    // PayPal hosted button/checkout URL (sandbox for testing)
-    // In production, you would use PayPal REST API or SDK
     const sandboxUrl = `https://www.sandbox.paypal.com/cgi-bin/webscr?cmd=_xclick&business=${businessEmail}&item_name=${encodeURIComponent(itemName)}&amount=${amount}&currency_code=MYR&return=${returnUrl}&cancel_return=${cancelUrl}`;
     
-    // For demo, return a placeholder URL
-    // Replace this with actual PayPal integration
     return sandboxUrl;
   };
 
@@ -627,40 +925,6 @@ const CheckoutPage: React.FC = () => {
               </div>
             </div>
             
-            <div className="mb-6">
-              <div className="flex items-center p-4 border-2 border-blue-600 rounded-lg bg-blue-50">
-                <div className="w-12 h-12 flex items-center justify-center mr-4 flex-shrink-0">
-                  <img 
-                    src="/paypal-icon.svg" 
-                    alt="PayPal" 
-                    className="w-full h-full object-contain"
-                    onError={(e) => {
-                      // Fallback if image fails to load
-                      const target = e.target as HTMLImageElement;
-                      target.style.display = 'none';
-                      const parent = target.parentElement;
-                      if (parent) {
-                        const fallbackDiv = document.createElement('div');
-                        fallbackDiv.className = 'w-12 h-12 bg-blue-600 rounded-lg flex items-center justify-center';
-                        const span = document.createElement('span');
-                        span.className = 'text-white font-bold text-sm';
-                        span.textContent = 'PP';
-                        fallbackDiv.appendChild(span);
-                        parent.appendChild(fallbackDiv);
-                      }
-                    }}
-                  />
-                </div>
-                <div className="flex-1">
-                  <h3 className="font-semibold text-gray-900">PayPal</h3>
-                  <p className="text-sm text-gray-600">Pay securely with PayPal</p>
-                </div>
-                <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                </svg>
-              </div>
-            </div>
-
             <div className="pt-4 border-t border-gray-200">
               <div className="mb-4">
                 <div className="flex justify-between text-lg font-semibold text-gray-900 mb-2">
@@ -669,34 +933,17 @@ const CheckoutPage: React.FC = () => {
                 </div>
               </div>
 
-              <button
-                onClick={handlePayPalCheckout}
-                disabled={loading}
-                className="w-full py-4 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
-              >
-                {loading ? (
-                  <>
-                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Processing...
-                  </>
-                ) : (
-                  <>
-                    <img 
-                      src="/paypal-icon.svg" 
-                      alt="PayPal" 
-                      className="w-6 h-6 mr-2 object-contain"
-                      onError={(e) => {
-                        const target = e.target as HTMLImageElement;
-                        target.style.display = 'none';
-                      }}
-                    />
-                    Pay with PayPal
-                  </>
-                )}
-              </button>
+              {!isFormValid() ? (
+                <div className="w-full py-4 bg-gray-100 rounded-lg flex items-center justify-center border-2 border-dashed border-gray-300">
+                  <span className="text-gray-500 text-sm">Please fill in all required fields above to proceed with payment</span>
+                </div>
+              ) : !paypalLoaded ? (
+                <div className="w-full py-4 bg-gray-200 rounded-lg flex items-center justify-center">
+                  <span className="text-gray-600">Loading PayPal...</span>
+                </div>
+              ) : (
+                <div ref={paypalButtonRef} className="w-full"></div>
+              )}
 
               <p className="text-xs text-gray-500 mt-4 text-center">
                 By proceeding, you agree to our Terms & Conditions

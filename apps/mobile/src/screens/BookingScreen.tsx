@@ -12,7 +12,7 @@ import {
 import { supabase } from '../supabaseClient';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { RouteProp } from '@react-navigation/native';
-import { RootStackParamList } from '../navigation/AppNavigator';
+import { RootStackParamList } from '../types/navigation';
 
 type BookingScreenProps = {
   navigation: NativeStackNavigationProp<RootStackParamList, 'Booking'>;

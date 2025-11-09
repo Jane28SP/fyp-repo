@@ -2,7 +2,11 @@ import { createClient } from '@supabase/supabase-js';
 
 // Use environment variables for Supabase configuration
 const SUPABASE_URL = process.env.REACT_APP_SUPABASE_URL || 'https://sznagdhpnjexuuydnimh.supabase.co';
-const SUPABASE_ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN6bmFnZGhwbmpleHV1eWRuaW1oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MDc5MjM1MjAsImV4cCI6MjAyMzQ5OTUyMH0.RNlVuEBvVGDdP-5cjVHyNHgpUQDqpBKhqBsH_HpPBVw';
+const SUPABASE_ANON_KEY = process.env.REACT_APP_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InN6bmFnZGhwbmpleHV1eWRuaW1oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTQ1Nzg4NjEsImV4cCI6MjA3MDE1NDg2MX0.TS8kgZjDjGhNSutksFEwJf7kslrqUddaChEbzdNqpl4';
+// Validate Supabase configuration
+if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+  console.warn('⚠️ Supabase configuration is missing. Please set REACT_APP_SUPABASE_URL and REACT_APP_SUPABASE_ANON_KEY environment variables.');
+}
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   auth: {
@@ -12,7 +16,22 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
   },
 });
 
-// 数据库类型定义
+// Test Supabase connection on initialization
+export async function testSupabaseConnection(): Promise<boolean> {
+  try {
+    const { data, error } = await supabase.from('events').select('id').limit(1);
+    if (error && error.message?.includes('Invalid API key')) {
+      console.error('❌ Supabase API key is invalid');
+      return false;
+    }
+    return true;
+  } catch (error: any) {
+    console.error('❌ Supabase connection test failed:', error);
+    return false;
+  }
+}
+
+// Database type definitions
 export interface User {
   id: string;
   email: string;
