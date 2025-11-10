@@ -299,9 +299,9 @@ This project demonstrates:
 ## 📧 Support
 
 For issues or questions, contact:
-- Developer: [Your Name]
-- Email: [Your Email]
-- GitHub: [Your GitHub Profile]
+- Developer: Jane
+- Email: jingyi_1128@hotmail.com
+- GitHub: https://github.com/Jane28SP
 
 ## 📄 License
 
